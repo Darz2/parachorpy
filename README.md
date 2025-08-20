@@ -1,49 +1,54 @@
 # parachorpy
 
-## Overview
-
-`parachorpy` is a Python package that calculates **surface tension of pure fluids** using correlations [1,2] and **surface tension of mixtures** using parachor model [3] as a function of temperature and pressure. It supports loading JSON data sources containing fluid-specific coefficients.
+`parachorpy` is a Python package that calculates **Vapor-liquid interfcial tension (IFT) of pure fluids** using emperical correlations [1,2] and **Vapor-liquid IFT of mixtures** using Parachor model [3]. It supports loading JSON data sources containing fluid-specific coefficients which are required to calculate IFTs.
 
 ## Features
 
-- Read one or more JSON files with surface tension correlation parameters.
-- Retrieve fluid-specific parameters (![s](https://latex.codecogs.com/svg.latex?s_i), ![n](https://latex.codecogs.com/svg.latex?n_i), and optionally ![Tc](https://latex.codecogs.com/svg.latex?T_c)).
-- Compute surface tension of pure fluids ![sigma](https://latex.codecogs.com/svg.latex?\sigma(T)) using the following correlation:
+- Read and retrive fluid-specific empercial coefficients (![s](https://latex.codecogs.com/svg.latex?s_i), ![n](https://latex.codecogs.com/svg.latex?n_i), and optionally ![Tc](https://latex.codecogs.com/svg.latex?T_c)) from JSON files.
+- Compute IFTs of pure fluids ![gamma](https://latex.codecogs.com/svg.latex?\gamma(T)) using the correlation,
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\sigma(T)=\sum_i%20s_i\left(1-\frac{T}{T_c}\right)^{n_i}" alt="\sigma(T) = \sum_i s_i (1 - T/T_c)^{n_i}">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma(T)=\sum_i%20s_i\left(1-\frac{T}{T_c}\right)^{n_i}," alt="\gamma(T) = \sum_i s_i (1 - T/T_c)^{n_i}">
 </p>
 
-
-- Compute the surface tension of mixtures using Parachor method using the following correlation:
+- Compute IFTs of mixtures using Parachor model,
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\left(\rho_{l}\sum_{j=1}^{N}\sum_{i=1}^{N}x_i%20x_j%20\mathcal{P}_{ij}-\rho_{v}\sum_{j=1}^{N}\sum_{i=1}^{N}y_i%20y_j%20\mathcal{P}_{ij}\right)^n" alt="\gamma_{\mathrm{mix}} = (\rho_l \sum_{j=1}^N \sum_{i=1}^N x_i x_j \mathcal{P}_{ij} - \rho_v \sum_{j=1}^N \sum_{i=1}^N y_i y_j \mathcal{P}_{ij})^n">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\left(\rho^{L}_{\mathrm{mix}}\sum_{j=1}^{N}\sum_{i=1}^{N}x_i%20x_j%20\mathcal{P}_{ij}-\rho^{V}_{\mathrm{mix}}\sum_{j=1}^{N}\sum_{i=1}^{N}y_i%20y_j%20\mathcal{P}_{ij}\right)^n," alt="\gamma_{\mathrm{mix}} = (\rho^L \sum_{j=1}^N \sum_{i=1}^N x_i x_j \mathcal{P}_{ij} - \rho^V \sum_{j=1}^N \sum_{i=1}^N y_i y_j \mathcal{P}_{ij})^n">
 </p>
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{ij}=(1-\delta_{ij})\frac{\mathcal{P}_{i}+\mathcal{P}_{j}}{2}" alt="\mathcal{P}_{ij} = (1 - \delta_{ij}) \frac{\mathcal{P}_{i} + \mathcal{P}_{j}}{2}">
+  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{ij}=(1-\delta_{ij})\frac{\mathcal{P}_{i}+\mathcal{P}_{j}}{2}," alt="\mathcal{P}_{ij} = (1 - \delta_{ij}) \frac{\mathcal{P}_{i} + \mathcal{P}_{j}}{2}">
 </p>
 
-- ![delta_ij](https://latex.codecogs.com/svg.latex?\delta_{ij}) is the fit parameter (binary interaction parameter).
-- The component-specific parachor number ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is obtained at the given temperature of the mixture ![T_mix](https://latex.codecogs.com/svg.latex?T_{mix}).
-
+- ![p_ij](https://latex.codecogs.com/svg.latex?\mathcal{P}_{ij}) is the cross Parachor term calculated using the component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) and the fit parameter ![delta_ij](https://latex.codecogs.com/svg.latex?\delta_{ij}) (similar to binary interaction parameter).
+- The component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) is obtained at the given temperature of the mixture, ![{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?{T_\mathrm{mix}}) using the following expression,
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\sigma^{1/n}=\mathcal{P}_{i}(\rho_{l}-\rho_{v})" alt="\sigma^{1/n} = \mathcal{P}_{i} (\rho_l - \rho_v)">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma^{1/n}=\mathcal{P}(\rho_{l}-\rho_{v})" alt="\sigma^{1/n} = \mathcal{P}_{i} (\rho_l - \rho_v)">,
 </p>
 
-- ![n](https://latex.codecogs.com/svg.latex?n) = 3.87 and ![P_i_T](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}(T)) is the Parachor number of the fluid.
-- If ![T_mix](https://latex.codecogs.com/svg.latex?T_{mix}) > 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) i.e., the critical temperature of a component in the mixture, then ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is computed at 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) for numerical stability. This approach is also used in REFPROP V10.
-- The Parachor model is used in addition with other Equation of State (EoS) models (Peng–Robinson, SRK, GERG-2008, EoS-CG, etc.) to compute ![rho_l](https://latex.codecogs.com/svg.latex?\rho_l), ![rho_v](https://latex.codecogs.com/svg.latex?\rho_v), ![P_T](https://latex.codecogs.com/svg.latex?\mathcal{P}(T)), ![x](https://latex.codecogs.com/svg.latex?x), and ![y](https://latex.codecogs.com/svg.latex?y).
-- This allows the Parachor model to be used in conjunction with other openly available thermodynamic packages like Clapeyron, FeOs, REFPROP, and similar other thermodynamic packages.
-
+- ![n](https://latex.codecogs.com/svg.latex?n) is the exponential constant of the Parachor model equal to 3.87 [4].
+- If ![T_{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?T_{\mathrm{mix}}) > 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) of the component ![i](https://latex.codecogs.com/svg.latex?i) in the mixture then ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is computed at 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) for numerical stability. The same approach is also applied in REFPROP V10.
+- The Parachor model is used in addition with other Equation of State (EoS) models (Peng–Robinson, SRK, GERG-2008, EoS-CG, etc.) to compute ![rho^L_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^L_\mathrm{mix}), ![rho^V_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^V_\mathrm{mix}), ![P(T)_{i}](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}(T)), ![rho^L_i](https://latex.codecogs.com/svg.latex?\rho^L_i), ![rho^V](https://latex.codecogs.com/svg.latex?\rho^V_i), ![x](https://latex.codecogs.com/svg.latex?x), and ![y](https://latex.codecogs.com/svg.latex?y).
+- `parachorpy` can be used as a plugin with other thermodynamic packages like Clapeyron, FeOs and REFPROP to compute IFTs of pure fluids and mixtures.
 
 ## Installation
 
-No external packages are required beyond Python's standard libraries.
+Git clone the package and install the package,
 
 ```bash
-python3 example/IFT_mixtures.py
+git clone https://github.com/Darz2/parachorpy.git
+pip install .
 ```
+
+External thermodynamic packages are needed to do EoS calcualtions in addition to Python's standard libraries.
+
+For example, if one is using REFPROP to do EoS calculations, python wrapper of REFPROP and the corresponding REFPROP library files will be required.
+
+```bash
+pip install ctREFPROP
+```
+
+If one is using Clapeyron.jl, then using PythonCall in julia can be used to calculate IFTs using `compute_sigma_pure`, `compute_sigma_mixture` and `parachor_number` functions in SurfaceTension class.
 
 ## JSON Input Format
 
@@ -104,6 +109,16 @@ if __name__ == '__main__':
 3. **Sugden, S. (1924)**  
    A relation between surface tension, density, and chemical composition  
    *Journal of the Chemical Society, Transactions*, 125, 32–41.  
-   [https://doi.org/10.1039/CT9242500032](https://doi.org/10.1039/CT9242500032)  
+   [https://doi.org/10.1039/CT9242500032](https://doi.org/10.1039/CT9242500032)
+  
+4. **Log, A. M.; Diky, V.; Huber, M. L. (2023)**  
+   Assessment of a parachor model for the surface tension of binary mixtures  
+   *International Journal of Thermophysics*, 44, Article 110.  
+   [https://doi.org/10.1007/s10765-023-03230-0](https://doi.org/10.1007/s10765-023-03230-0)  
 
 > **Note:** More correlations can be added for n-alkanes, ethers, and esters.
+
+## TO DO:
+
+- TEST need to be  written
+- Julia Integration using Python Call need to be added (in v0.2.0) 
