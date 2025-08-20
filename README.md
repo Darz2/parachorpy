@@ -23,7 +23,7 @@
 - The component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) is obtained at the given temperature of the mixture, ![{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?{T_\mathrm{mix}}) using the following expression,
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\gamma^{1/n}=\mathcal{P}(\rho_{l}-\rho_{v})" alt="\sigma^{1/n} = \mathcal{P}_{i} (\rho_l - \rho_v)">,
+  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}" alt="\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}">,
 </p>
 
 - ![n](https://latex.codecogs.com/svg.latex?n) is the exponential constant of the Parachor model equal to 3.87 [4].
@@ -48,7 +48,7 @@ For example, if one is using REFPROP to do EoS calculations, python wrapper of R
 pip install ctREFPROP
 ```
 
-If one is using Clapeyron.jl, then using PythonCall in julia can be used to calculate IFTs using `compute_sigma_pure`, `compute_sigma_mixture` and `parachor_number` functions in SurfaceTension class.
+If one is using Clapeyron.jl, then using PythonCall in julia can be used to calculate IFTs using `compute_gamma_pure`, `compute_gamma_mixture` and `parachor_number` functions in InterfacialTension class.
 
 ## JSON Input Format
 
@@ -74,24 +74,25 @@ Each JSON file must contain a list of dictionaries, each describing one fluid. E
 ## Example Usage
 
 ```python
-from parachorpy import parachor as ST
+from parachorpy import parachor as IFT
 import numpy as np
 
 if __name__ == '__main__':
-    json_files = ["Mulero_2012.json"]
-    model = ST.SurfaceTension(json_files)
+    
+    json_files  = ["Mulero_2012.json"]
+    model       = IFT.InterfacialTension(json_files)
     model.ctREFPROP_init('~/Software/REFPROP_BETA/REFPROP-cmake/build', gerg_enable=1)
 
     MIXTURE   = "CO2;Methane"
-    z         = [0.95, 0.05] # composition
-    T         = 250.0        # in Kelvin
-    PRESSURES = np.arange(20.0, 31.0, 5.0) # in bar
+    z         = [0.95, 0.05]
+    T         = 250.0
+    PRESSURES = np.arange(20.0, 31.0, 5.0)
     kij       = 0.0
 
-    Pbar, sigma = model.REFPROP_MIXTURE(MIXTURE, z, T, PRESSURES, kij)
+    Pbar, gamma = model.REFPROP_MIXTURE(MIXTURE, z, T, PRESSURES, kij)
 
-    for P, s in zip(Pbar, sigma):
-        print(f"P = {P:.1f} bar | sigma = {s:.4f} mN/m")
+    for P, s in zip(Pbar, gamma):
+        print(f"P = {P:.1f} bar | gamma = {s:.4f} mN/m")
 ```
 
 ## References
@@ -120,5 +121,5 @@ if __name__ == '__main__':
 
 ## TO DO:
 
-- TEST need to be  written
+- Python TEST need to be  written
 - Julia Integration using Python Call need to be added (in v0.2.0) 

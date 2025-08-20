@@ -6,7 +6,7 @@ import json,os,re,numpy as np, collections.abc
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 from pathlib import Path
 
-class SurfaceTension:
+class InterfacialTension:
     def __init__(self, json_files):
             """
             Load one or more JSON files from the database directory.
@@ -105,9 +105,9 @@ class SurfaceTension:
 
         raise ValueError(f"Fluid '{fluid_name}' not found (normalized as '{q}', alias -> '{target}').")
 
-    def compute_sigma_pure(self, T, fluid_name, Tc=None):
+    def compute_gamma_pure(self, T, fluid_name, Tc=None):
         """
-        Compute surface tension for a fluid at temperature T.
+        Compute Interfacial tension (IFT) for a fluid at temperature T.
 
         Parameters:
         - T : float
@@ -115,7 +115,7 @@ class SurfaceTension:
         - Tc : float (optional) — use only if Tc is not in the JSON
 
         Returns:
-        - sigma : float (mN/m)
+        - gamma : float (mN/m)
         """
         Tc_json, s, n = self.get_fluid_params(fluid_name)
         Tc_final = Tc_json if Tc_json is not None else Tc
@@ -127,26 +127,26 @@ class SurfaceTension:
             raise ValueError("Length of s and n must be equal")
 
         if T <= Tc_final:
-            sigma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+            gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
 
         if T > Tc_final:
             print(f"Given temperature is greater than Tc ({Tc_final}) for {fluid_name}")
-            print(f"Computing surface tension at T = 0.9*{Tc_final}")
+            print(f"Computing interfacial tension at T = 0.9*{Tc_final}")
             T = 0.9 * Tc_final
-            sigma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+            gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
             
-            return sigma_T * 1e3, T  # Convert to mN/m
+            return gamma_T * 1e3, T  # Convert to mN/m
 
-        return sigma_T * 1e3, T  # Convert to mN/m
+        return gamma_T * 1e3, T  # Convert to mN/m
 
-    def parachor_number(self,rho_l, rho_v, sigma):
+    def parachor_number(self,rho_l, rho_v, gamma):
         """
         Calculate the parachor number.
 
         Parameters:
-        - rho_l : float — liquid density [kg/m³]
-        - rho_v : float — vapor density [kg/m³]
-        - sigma : float — surface tension [mN/m]
+        - rho_l : float — Liquid density [kg/m³]
+        - rho_v : float — Vapor density [kg/m³]
+        - gamma : float — Interfacial tension [mN/m]
 
         Returns:
         - P : float — parachor number [kg/m³]ⁿ·mN/m
@@ -155,12 +155,12 @@ class SurfaceTension:
         - n : float — exponent in the parachor equation (default: 3.87); REFPROP v10 (Lemmon et al, 2018)
         """
         n = 3.87
-        if rho_l <= 0 or rho_v <= 0 or sigma <= 0:
+        if rho_l <= 0 or rho_v <= 0 or gamma <= 0:
             raise ValueError("All inputs must be positive")
 
         delta_rho = rho_l - rho_v               # [mol/cm³]
-        sigma_SI = sigma                        # in  mN/m
-        parachor = sigma_SI**(1/n) / delta_rho
+        gamma_SI = gamma                        # in  mN/m
+        parachor = gamma_SI**(1/n) / delta_rho
         
         return parachor
 
@@ -173,7 +173,7 @@ class SurfaceTension:
         kij: float = 0.0,
     ):
         """
-        Compute mixture surface tension over one or more pressures (bar).
+        Compute mixture Interfacial tension over one or more pressures (bar).
 
         Parameters
         ----------
@@ -191,7 +191,7 @@ class SurfaceTension:
         Returns
         -------
         pressures_bar : list[float]
-        sigma_mN_per_m : list[float]
+        gamma_mN_per_m : list[float]
         """
 
         # Allow single float or iterable
@@ -204,7 +204,7 @@ class SurfaceTension:
         ncomp = len(components)
         pressures_bar = list(pressures_bar)
 
-        # --- per-component molar masses & parachor numbers at Teff (from pure sigma)
+        # --- per-component molar masses & parachor numbers at Teff (from pure gamma)
         MOLAR_MASSES = []
         parachor_numbers = []
 
@@ -214,8 +214,8 @@ class SurfaceTension:
             MM = self.RP.REFPROPdll(comp, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0]
             MOLAR_MASSES.append(MM)
 
-            # Pure sigma (may switch to Teff=0.9Tc if T>Tc)
-            sigma_val_mNpm, Teff = self.compute_sigma_pure(T, comp, Tc=None)
+            # Pure gamma (may switch to Teff=0.9Tc if T>Tc)
+            gamma_val_mNpm, Teff = self.compute_gamma_pure(T, comp, Tc=None)
 
             liq = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 0, [1.0])
             vap = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 1, [1.0])
@@ -227,14 +227,14 @@ class SurfaceTension:
             P_i = self.parachor_number(
                 rhoL_kg_m3 / (MM * 1e3),
                 rhoV_kg_m3 / (MM * 1e3),
-                sigma_val_mNpm
+                gamma_val_mNpm
             )
             parachor_numbers.append(P_i)
 
         # --- sweep pressures
-        results_sigma = []
+        results_gamma = []
         for Pbar in pressures_bar:
-            print(f"\nCalculating mixture sigma at T={T} K, P={Pbar} bar for {mixture}")
+            print(f"\nCalculating mixture gamma at T={T} K, P={Pbar} bar for {mixture}")
 
             mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar/10.0, z)
             xL = np.array(mix.x[:ncomp])
@@ -251,7 +251,7 @@ class SurfaceTension:
             rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
             rhoV_mol_cm3 = (rhoV_kg_m3 / MM_V) * 1e-3
 
-            sigma_mix = self.compute_sigma_mixture(
+            gamma_mix = self.compute_gamma_mixture(
                 x=xL.tolist(),
                 y=yV.tolist(),
                 rho_l=rhoL_mol_cm3,
@@ -259,14 +259,14 @@ class SurfaceTension:
                 parachor_numbers=parachor_numbers,
                 kij=kij
             )
-            print(f"Surface tension: {sigma_mix:.6f} mN/m")
-            results_sigma.append(sigma_mix)
+            print(f"Interfacial tension: {gamma_mix:.6f} mN/m")
+            results_gamma.append(gamma_mix)
 
-        return pressures_bar, results_sigma
+        return pressures_bar, results_gamma
 
-    def compute_sigma_mixture(self, x, y, rho_l, rho_v, parachor_numbers, kij=0.0):
+    def compute_gamma_mixture(self, x, y, rho_l, rho_v, parachor_numbers, kij=0.0):
         """
-        Compute surface tension for a mixture using the parachor method.
+        Compute Interfacial tension for a mixture using the parachor method.
 
         Parameters:
         - x, y : mole fractions (lists) for liquid and vapor
@@ -275,7 +275,7 @@ class SurfaceTension:
         - kij : scalar or matrix of binary interaction parameters (default 0)
 
         Returns:
-        - sigma_mix : surface tension [mN/m]
+        - gamma_mix : Interfacial tension [mN/m]
         """
         if not (len(x) == len(y) == len(parachor_numbers)):
             raise ValueError("Mismatched input lengths")
@@ -297,6 +297,6 @@ class SurfaceTension:
         P_l = sum(x[i] * x[j] * P_ij(i, j) for i in range(N) for j in range(N))
         P_v = sum(y[i] * y[j] * P_ij(i, j) for i in range(N) for j in range(N))
 
-        sigma_mix = (rho_l * P_l - rho_v * P_v) ** n
+        gamma_mix = (rho_l * P_l - rho_v * P_v) ** n
         
-        return sigma_mix
+        return gamma_mix
