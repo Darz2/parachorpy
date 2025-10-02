@@ -598,7 +598,7 @@ class InterfacialTension:
             dew_cV_mol_cm3 = dew_cV_mol_cm3[idx_dew]
 
         # Package output (single block)
-        out = {
+        pxy_out = {
             "bubble": {
                 "x": bub_x, "y": bub_y, "P_bar": bub_P_bar,
                 "M_liq": bub_ML_kg_mol, "M_vap": bub_MV_kg_mol,
@@ -620,4 +620,8 @@ class InterfacialTension:
                 ),
             },
         }
-        return out
+        
+        
+        print(pxy_out["bubble"])
+        
+        return pxy_out

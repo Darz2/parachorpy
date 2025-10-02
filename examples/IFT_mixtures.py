@@ -32,36 +32,36 @@ if __name__ == '__main__':
             
     pxy = model.REFPROP_PXY(MIXTURE, T, npts=50, clip=1e-3, verbose=False)
 
-    print("\n--- Bubble curve ---")
-    for x, y, P, rhoL, rhoV, M_liq, M_vap in zip(
-        pxy['bubble']['x'], 
-        pxy['bubble']['y'], 
-        pxy['bubble']['P_bar'], 
-        pxy['bubble']['rhoL'], 
-        pxy['bubble']['rhoV'],
-        pxy['bubble']['M_liq'],
-        pxy['bubble']['M_vap']
-    ):
-        if not np.isnan(P):
-            print(
-                f"x_CO2={x[0]:.4f}, y_CO2={y[0]:.4f}, "
-                f"P={P:.3f} bar, rhoL={rhoL:.3f} kg/m³, rhoV={rhoV:.3f} kg/m³, "
-                f"M_liq={M_liq:.6f} kg/mol, M_vap={M_vap:.6f} kg/mol"
-            )
+    # print("\n--- Bubble curve ---")
+    # for x, y, P, rhoL, rhoV, M_liq, M_vap in zip(
+    #     pxy['bubble']['x'], 
+    #     pxy['bubble']['y'], 
+    #     pxy['bubble']['P_bar'], 
+    #     pxy['bubble']['rhoL'], 
+    #     pxy['bubble']['rhoV'],
+    #     pxy['bubble']['M_liq'],
+    #     pxy['bubble']['M_vap']
+    # ):
+    #     if not np.isnan(P):
+    #         print(
+    #             f"x_CO2={x[0]:.4f}, y_CO2={y[0]:.4f}, "
+    #             f"P={P:.3f} bar, rhoL={rhoL:.3f} kg/m³, rhoV={rhoV:.3f} kg/m³, "
+    #             f"M_liq={M_liq:.6f} kg/mol, M_vap={M_vap:.6f} kg/mol"
+    #         )
 
-    print("\n--- Dew curve ---")
-    for y, x, P, rhoL, rhoV, M_liq, M_vap in zip(
-        pxy['dew']['y'],
-        pxy['dew']['x'],
-        pxy['dew']['P_bar'],
-        pxy['dew']['rhoL'],
-        pxy['dew']['rhoV'],
-        pxy['dew']['M_liq'],
-        pxy['dew']['M_vap']
-    ):
-        if np.isfinite(P):
-            print(
-                f"y_CO2={y[0]:.4f}, x_CO2={x[0]:.4f}, "
-                f"P={P:.3f} bar, rhoL={rhoL:.3f} kg/m³, rhoV={rhoV:.3f} kg/m³, "
-                f"M_liq={M_liq:.6f} kg/mol, M_vap={M_vap:.6f} kg/mol"
-            )
+    # print("\n--- Dew curve ---")
+    # for y, x, P, rhoL, rhoV, M_liq, M_vap in zip(
+    #     pxy['dew']['y'],
+    #     pxy['dew']['x'],
+    #     pxy['dew']['P_bar'],
+    #     pxy['dew']['rhoL'],
+    #     pxy['dew']['rhoV'],
+    #     pxy['dew']['M_liq'],
+    #     pxy['dew']['M_vap']
+    # ):
+    #     if np.isfinite(P):
+    #         print(
+    #             f"y_CO2={y[0]:.4f}, x_CO2={x[0]:.4f}, "
+    #             f"P={P:.3f} bar, rhoL={rhoL:.3f} kg/m³, rhoV={rhoV:.3f} kg/m³, "
+    #             f"M_liq={M_liq:.6f} kg/mol, M_vap={M_vap:.6f} kg/mol"
+    #         )
