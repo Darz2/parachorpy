@@ -127,18 +127,16 @@ class InterfacialTension:
             raise ValueError("Length of s and n must be equal")
 
         if key == 'Parachor':
-        
             if T <= Tc_final:
                 gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
 
             if T > Tc_final:
                 print(f"Given temperature is greater than Tc ({Tc_final}) for {fluid_name}")
-                print(f"Computing interfacial tension at T = 0.9*{Tc_final}")
+                print(f"Computing interfacial tension at T = 0.9*{Tc_final} for Parachor method")
                 T = 0.9 * Tc_final
                 gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
         
         elif key == "WSD":
-            
             if T <= Tc_final:
                 gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
             
@@ -146,7 +144,6 @@ class InterfacialTension:
                 gamma_T = 0    
         
         else:
-            
             print("The key should be either Parachor or WSD")
             gamma_T = np.NaN 
 
@@ -176,115 +173,6 @@ class InterfacialTension:
         parachor  = gamma_SI**(1/n) / delta_rho
         
         return parachor
-
-    def REFPROP_MIXTURE(self,mixture: str,z: list[float],T: float,pressures_bar,
-                        kij: float = 0.0, phi_ij=1.0):
-        
-        """
-        Compute mixture Interfacial tension over one or more pressures (bar).
-
-        Parameters
-        ----------
-        mixture : str
-            REFPROP mixture string, e.g. "CO2;Methane"
-        z : list[float]
-            Overall composition (same order as `mixture` components)
-        T : float
-            Temperature [K]
-        pressures_bar : float | iterable of float
-            Pressure(s) in bar
-        kij : float
-            Binary interaction parameter for parachor mixing rule (scalar)
-
-        Returns
-        -------
-        pressures_bar : list[float]
-        gamma_mN_per_m : list[float]
-        """
-
-        # Allow single float or iterable
-        if isinstance(pressures_bar, collections.abc.Iterable) and not isinstance(pressures_bar, (str, bytes)):
-            pressures_bar = list(pressures_bar)
-        else:
-            pressures_bar = [pressures_bar]
-        
-        components      = mixture.split(";")
-        ncomp           = len(components)
-        pressures_bar   = list(pressures_bar)
-
-        # --- per-component molar masses & parachor numbers at Teff (from pure gamma)
-        MOLAR_MASSES        = []
-        parachor_numbers    = []
-
-        # print(f"Preparing pure-component data at T={T} K")
-        for comp in components:
-            # Molar mass (kg/kmol == g/mol numerically)
-            MM = self.RP.REFPROPdll(comp, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0]
-            MOLAR_MASSES.append(MM)
-
-            # Pure gamma (may switch to Teff=0.9Tc if T>Tc)
-            gamma_val_mNpm, Teff = self.compute_gamma_pure(T, comp, key='Parachor', Tc=None)
-
-            liq = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 0, [1.0])
-            vap = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 1, [1.0])
-
-            rhoL_kg_m3 = liq.Output[0]
-            rhoV_kg_m3 = vap.Output[0]
-
-            # Convert densities to mol/cm^3 and compute parachor number
-            P_i = self.parachor_number(
-                rhoL_kg_m3 / (MM * 1e3),
-                rhoV_kg_m3 / (MM * 1e3),
-                gamma_val_mNpm
-            )
-            parachor_numbers.append(P_i)
-
-        # --- sweep pressures
-        results_gamma_Parachor = []
-        results_gamma_WSD      = []
-                
-        for Pbar in pressures_bar:
-            print(f"\nCalculating mixture gamma at T={T} K, P={Pbar} bar for {mixture}")
-
-            mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar/10.0, z)
-            
-            xL  = np.array(mix.x[:ncomp])
-            yV  = np.array(mix.y[:ncomp])
-
-            rhoL_kg_m3 = mix.Output[1]
-            rhoV_kg_m3 = mix.Output[2]
-
-            # phase molar masses (kg/kmol == g/mol numerically)
-            MM_L = float(np.sum(xL * MOLAR_MASSES))
-            MM_V = float(np.sum(yV * MOLAR_MASSES))
-
-            # kg/m3 -> (kg/kmol) -> kmol/m3 -> mol/cm3
-            rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
-            rhoV_mol_cm3 = (rhoV_kg_m3 / MM_V) * 1e-3
-
-            gamma_mix_Parachor = self.compute_gamma_Parachor(
-                                    x=xL.tolist(),
-                                    y=yV.tolist(),
-                                    rho_l=rhoL_mol_cm3,
-                                    rho_v=rhoV_mol_cm3,
-                                    parachor_numbers=parachor_numbers,
-                                    kij=kij)
-            
-            print(f"Interfacial tension: {gamma_mix_Parachor:.6f} mN/m")
-            results_gamma_Parachor.append(gamma_mix_Parachor)
-            
-            gamma_mix_WSD = self.compute_gamma_WSD(
-                                    T=T, comp = components,
-                                    x=xL.tolist(),
-                                    y=yV.tolist(),
-                                    rho_l=rhoL_mol_cm3,
-                                    rho_v=rhoV_mol_cm3,
-                                    phi=phi_ij)
-            
-            print(f"Interfacial tension: {gamma_mix_WSD:.6f} mN/m")
-            results_gamma_WSD.append(gamma_mix_WSD)
-
-        return pressures_bar, results_gamma_Parachor, results_gamma_WSD
 
     def compute_gamma_Parachor(self, x, y, rho_l, rho_v, parachor_numbers, kij=0.0):
         """
@@ -324,7 +212,6 @@ class InterfacialTension:
         return gamma_mix_Parachor
     
     # Created by Darshan on 2025-10-01
-    
     def compute_gamma_WSD(self, T, comp, x, y, rho_l, rho_v, phi=1.0):
         """
         Compute Interfacial tension of a mixture using the Winterfeld-Scriven-Davis method.
@@ -447,4 +334,290 @@ class InterfacialTension:
         
         return gamma_mix_WSD
         
+    def REFPROP_MIXTURE(self, mixture: str, z: list[float], T: float,pressures_bar,
+                        kij: float = 0.0, phi_ij=1.0):
+        """
+        Compute mixture Interfacial tension over one or more pressures (bar).
+
+        Parameters
+        ----------
+        mixture : str
+            REFPROP mixture string, e.g. "CO2;Methane"
+        z : list[float]
+            Overall composition (same order as `mixture` components)
+        T : float
+            Temperature [K]
+        pressures_bar : float | iterable of float
+            Pressure(s) in bar
+        kij : float
+            Binary interaction parameter for parachor mixing rule (scalar)
+        phi_ij : float
+            Mixing parameter for WSD model (scalar)    
+
+        Returns
+        -------
+        pressures_bar           : list[float]
+        results_gamma_Parachor  : list[float]
+        results_gamma_WSD       : list[float]
+        """
+
+        # Allow single float or iterable
+        if isinstance(pressures_bar, collections.abc.Iterable) and not isinstance(pressures_bar, (str, bytes)):
+            pressures_bar = list(pressures_bar)
+        else:
+            pressures_bar = [pressures_bar]
+        
+        components      = mixture.split(";")
+        ncomp           = len(components)
+        pressures_bar   = list(pressures_bar)
+
+        # --- per-component molar masses & parachor numbers at Teff (from pure gamma)
+        MOLAR_MASSES        = []
+        parachor_numbers    = []
+
+        # print(f"Preparing pure-component data at T={T} K")
+        for comp in components:
+            # Molar mass (kg/kmol == g/mol numerically)
+            MM = self.RP.REFPROPdll(comp, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0]
+            MOLAR_MASSES.append(MM)
+
+            # Pure gamma (may switch to Teff=0.9Tc if T>Tc)
+            gamma_val_mNpm, Teff = self.compute_gamma_pure(T, comp, key='Parachor', Tc=None)
+
+            liq = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 0, [1.0])
+            vap = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 1, [1.0])
+
+            rhoL_kg_m3 = liq.Output[0]
+            rhoV_kg_m3 = vap.Output[0]
+
+            # Convert densities to mol/cm^3 and compute parachor number
+            P_i = self.parachor_number(
+                rhoL_kg_m3 / (MM * 1e3),
+                rhoV_kg_m3 / (MM * 1e3),
+                gamma_val_mNpm
+            )
+            parachor_numbers.append(P_i)
+
+        # --- sweep pressures
+        results_gamma_Parachor = []
+        results_gamma_WSD      = []
+                
+        for Pbar in pressures_bar:
+            
+            # # Debug prints 
+            # print(f"\nCalculating mixture gamma at T={T} K, P={Pbar} bar for {mixture}")
+
+            mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar/10.0, z)
+            
+            xL  = np.array(mix.x[:ncomp])
+            yV  = np.array(mix.y[:ncomp])
+
+            rhoL_kg_m3 = mix.Output[1]
+            rhoV_kg_m3 = mix.Output[2]
+
+            # phase molar masses (kg/kmol == g/mol numerically)
+            MM_L = float(np.sum(xL * MOLAR_MASSES))
+            MM_V = float(np.sum(yV * MOLAR_MASSES))
+
+            # kg/m3 -> (kg/kmol) -> kmol/m3 -> mol/cm3
+            rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
+            rhoV_mol_cm3 = (rhoV_kg_m3 / MM_V) * 1e-3
+
+            gamma_mix_Parachor = self.compute_gamma_Parachor(
+                                x=xL.tolist(),y=yV.tolist(),
+                                rho_l=rhoL_mol_cm3,rho_v=rhoV_mol_cm3,
+                                parachor_numbers=parachor_numbers,kij=kij)
+            
+            gamma_mix_WSD = self.compute_gamma_WSD(
+                            T=T, comp = components,x=xL.tolist(),
+                            y=yV.tolist(),rho_l=rhoL_mol_cm3,
+                            rho_v=rhoV_mol_cm3,phi=phi_ij)
+            
+            results_gamma_Parachor.append(gamma_mix_Parachor)
+            results_gamma_WSD.append(gamma_mix_WSD)
+            
+            # # Debug prints
+            # print(f"Interfacial tension: {gamma_mix_Parachor:.6f} mN/m")
+            # print(f"Interfacial tension: {gamma_mix_WSD:.6f} mN/m")
+            
+        return pressures_bar, results_gamma_Parachor, results_gamma_WSD
     
+    def REFPROP_PXY(self, mixture: str, T: float, npts: int,
+                    x1_grid=None, y1_grid=None, clip=1e-4, 
+                    verbose=False, return_densities=True):
+        """
+        Pxy at fixed T for a *binary* mixture using REFPROP 'TQ' mode.
+
+        Bubble line (Q=0): input x (liquid comp) -> get P and coexisting y.
+        Dew    line (Q=1): input y (vapor  comp) -> get P and coexisting x.
+
+        Returns
+        -------
+        out: dict
+        'bubble': {'x','y','P_bar','M_liq','M_vap', ['rhoL','rhoV','cL_mol_cm3','cV_mol_cm3' if return_densities]}
+        'dew'   : {'x','y','P_bar','M_liq','M_vap', ['rhoL','rhoV','cL_mol_cm3','cV_mol_cm3' if return_densities]}
+        Units:
+        rho* in kg/m^3 (SI), M_* in kg/mol, c*_mol_cm3 in mol/cm^3.
+        """
+        comps = mixture.split(';')
+        if len(comps) != 2:
+            raise ValueError("REFPROP_PXY supports binary mixtures only, e.g. 'CO2;Methane'.")
+
+        # Build grids; avoid exact 0 and 1
+        if x1_grid is None:
+            x1_grid = np.linspace(clip, 1.0 - clip, npts)
+        else:
+            x1_grid = np.clip(np.asarray(list(x1_grid), float), clip, 1.0 - clip)
+
+        if y1_grid is None:
+            y1_grid = np.linspace(clip, 1.0 - clip, npts)
+        else:
+            y1_grid = np.clip(np.asarray(list(y1_grid), float), clip, 1.0 - clip)
+
+        Nb, Nd = len(x1_grid), len(y1_grid)
+
+        # Allocate (bubble)
+        bub_x            = np.full((Nb, 2), np.nan)
+        bub_y            = np.full((Nb, 2), np.nan)
+        bub_P_bar        = np.full(Nb, np.nan)
+        bub_Dliq_kg_m3   = np.full(Nb, np.nan)
+        bub_Dvap_kg_m3   = np.full(Nb, np.nan)
+        bub_ML_kg_mol    = np.full(Nb, np.nan)
+        bub_MV_kg_mol    = np.full(Nb, np.nan)
+        bub_cL_mol_cm3   = np.full(Nb, np.nan)
+        bub_cV_mol_cm3   = np.full(Nb, np.nan)
+
+        # Allocate (dew)
+        dew_x            = np.full((Nd, 2), np.nan)
+        dew_y            = np.full((Nd, 2), np.nan)
+        dew_P_bar        = np.full(Nd, np.nan)
+        dew_Dliq_kg_m3   = np.full(Nd, np.nan)
+        dew_Dvap_kg_m3   = np.full(Nd, np.nan)
+        dew_ML_kg_mol    = np.full(Nd, np.nan)
+        dew_MV_kg_mol    = np.full(Nd, np.nan)
+        dew_cL_mol_cm3   = np.full(Nd, np.nan)
+        dew_cV_mol_cm3   = np.full(Nd, np.nan)
+
+        # Helper to check REFPROP success robustly
+        def ok_res(res):
+            ierr = getattr(res, "ierr", 0)
+            herr = getattr(res, "herr", "")
+            out0 = res.Output[0] if (hasattr(res, "Output") and len(res.Output) > 0) else -1e20
+            return (ierr == 0) and (herr.strip() == "") and (out0 > -1e10)
+
+        # -------- Bubble line: TQ, Q=0, z=x --------
+        for k, x1 in enumerate(x1_grid):
+            x = [float(x1), float(1.0 - x1)]
+            # P; Dliq; Dvap; M (M corresponds to the liquid phase at Q=0)
+            res = self.RP.REFPROPdll(mixture, "TQ", "P;Dliq;Dvap;M", self.SI_BASE, 0, 0, T, 0.0, x)
+            if ok_res(res):
+                bub_P_bar[k]      = res.Output[0] * 10.0   # MPa -> bar
+                bub_Dliq_kg_m3[k] = res.Output[1]         # kg/m^3 (liq)
+                bub_Dvap_kg_m3[k] = res.Output[2]         # kg/m^3 (vap)
+                M_g_per_mol       = res.Output[3]         # g/mol (liq, Q=0)
+                bub_ML_kg_mol[k]  = M_g_per_mol / 1000.0  # kg/mol
+
+                bub_x[k, :]       = x
+                bub_y[k, 0:2]     = res.y[0:2]
+
+                # Coexisting vapor M at same T, Q=1 with y
+                try:
+                    res_v = self.RP.REFPROPdll(mixture, "TQ", "M", self.SI_BASE, 0, 0, T, 1.0, bub_y[k, :].tolist())
+                    if ok_res(res_v):
+                        bub_MV_kg_mol[k] = res_v.Output[0] / 1000.0
+                except Exception:
+                    if verbose:
+                        print(f"[BUB extra M] failed at k={k}")
+
+                # Molar concentrations (mol/cm^3) if we have M
+                if return_densities:
+                    if np.isfinite(bub_ML_kg_mol[k]) and bub_ML_kg_mol[k] > 0:
+                        bub_cL_mol_cm3[k] = (bub_Dliq_kg_m3[k] / bub_ML_kg_mol[k]) / 1e6
+                    if np.isfinite(bub_MV_kg_mol[k]) and bub_MV_kg_mol[k] > 0:
+                        bub_cV_mol_cm3[k] = (bub_Dvap_kg_m3[k] / bub_MV_kg_mol[k]) / 1e6
+            elif verbose:
+                print(f"[BUB] T={T} K, x1={x1:.4f} failed: ierr={getattr(res,'ierr',None)} herr='{getattr(res,'herr','')}'")
+
+        # -------- Dew line: TQ, Q=1, z=y --------
+        for k, y1 in enumerate(y1_grid):
+            y = [float(y1), float(1.0 - y1)]
+            # P; Dliq; Dvap; M (M corresponds to the vapor phase at Q=1)
+            res = self.RP.REFPROPdll(mixture, "TQ", "P;Dliq;Dvap;M", self.SI_BASE, 0, 0, T, 1.0, y)
+            if ok_res(res):
+                dew_P_bar[k]      = res.Output[0] * 10.0
+                dew_Dliq_kg_m3[k] = res.Output[1]
+                dew_Dvap_kg_m3[k] = res.Output[2]
+                M_g_per_mol       = res.Output[3]         # g/mol (vap, Q=1)
+                dew_MV_kg_mol[k]  = M_g_per_mol / 1000.0  # kg/mol
+
+                dew_y[k, :]       = y
+                dew_x[k, 0:2]     = res.x[0:2]
+
+                # Coexisting liquid M at same T, Q=0 with x
+                try:
+                    res_l = self.RP.REFPROPdll(mixture, "TQ", "M", self.SI_BASE, 0, 0, T, 0.0, dew_x[k, :].tolist())
+                    if ok_res(res_l):
+                        dew_ML_kg_mol[k] = res_l.Output[0] / 1000.0
+                except Exception:
+                    if verbose:
+                        print(f"[DEW extra M] failed at k={k}")
+
+                # Molar concentrations (mol/cm^3)
+                if return_densities:
+                    if np.isfinite(dew_ML_kg_mol[k]) and dew_ML_kg_mol[k] > 0:
+                        dew_cL_mol_cm3[k] = (dew_Dliq_kg_m3[k] / dew_ML_kg_mol[k]) / 1e6
+                    if np.isfinite(dew_MV_kg_mol[k]) and dew_MV_kg_mol[k] > 0:
+                        dew_cV_mol_cm3[k] = (dew_Dvap_kg_m3[k] / dew_MV_kg_mol[k]) / 1e6
+            elif verbose:
+                print(f"[DEW] T={T} K, y1={y1:.4f} failed: ierr={getattr(res,'ierr',None)} herr='{getattr(res,'herr','')}'")
+
+        # --- Sort bubble by pressure ---
+        idx_bub        = np.argsort(bub_P_bar)
+        bub_P_bar      = bub_P_bar[idx_bub]
+        bub_x          = bub_x[idx_bub]
+        bub_y          = bub_y[idx_bub]
+        bub_ML_kg_mol  = bub_ML_kg_mol[idx_bub]
+        bub_MV_kg_mol  = bub_MV_kg_mol[idx_bub]
+        if return_densities:
+            bub_Dliq_kg_m3 = bub_Dliq_kg_m3[idx_bub]
+            bub_Dvap_kg_m3 = bub_Dvap_kg_m3[idx_bub]
+            bub_cL_mol_cm3 = bub_cL_mol_cm3[idx_bub]
+            bub_cV_mol_cm3 = bub_cV_mol_cm3[idx_bub]
+
+        # --- Sort dew by pressure ---
+        idx_dew        = np.argsort(dew_P_bar)
+        dew_P_bar      = dew_P_bar[idx_dew]
+        dew_x          = dew_x[idx_dew]
+        dew_y          = dew_y[idx_dew]
+        dew_ML_kg_mol  = dew_ML_kg_mol[idx_dew]
+        dew_MV_kg_mol  = dew_MV_kg_mol[idx_dew]
+        if return_densities:
+            dew_Dliq_kg_m3 = dew_Dliq_kg_m3[idx_dew]
+            dew_Dvap_kg_m3 = dew_Dvap_kg_m3[idx_dew]
+            dew_cL_mol_cm3 = dew_cL_mol_cm3[idx_dew]
+            dew_cV_mol_cm3 = dew_cV_mol_cm3[idx_dew]
+
+        # Package output (single block)
+        out = {
+            "bubble": {
+                "x": bub_x, "y": bub_y, "P_bar": bub_P_bar,
+                "M_liq": bub_ML_kg_mol, "M_vap": bub_MV_kg_mol,
+                **(
+                    {
+                        "rhoL": bub_Dliq_kg_m3, "rhoV": bub_Dvap_kg_m3,
+                        "cL_mol_cm3": bub_cL_mol_cm3, "cV_mol_cm3": bub_cV_mol_cm3
+                    } if return_densities else {}
+                ),
+            },
+            "dew": {
+                "x": dew_x, "y": dew_y, "P_bar": dew_P_bar,
+                "M_liq": dew_ML_kg_mol, "M_vap": dew_MV_kg_mol,
+                **(
+                    {
+                        "rhoL": dew_Dliq_kg_m3, "rhoV": dew_Dvap_kg_m3,
+                        "cL_mol_cm3": dew_cL_mol_cm3, "cV_mol_cm3": dew_cV_mol_cm3
+                    } if return_densities else {}
+                ),
+            },
+        }
+        return out
