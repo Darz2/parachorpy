@@ -2,7 +2,7 @@
 
 # Created by Darshan on 2025-07-15
 
-import json,os,re,numpy as np, collections.abc
+import json,os,re,math,numpy as np, collections.abc
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 from pathlib import Path
 
@@ -105,7 +105,7 @@ class InterfacialTension:
 
         raise ValueError(f"Fluid '{fluid_name}' not found (normalized as '{q}', alias -> '{target}').")
 
-    def compute_gamma_pure(self, T, fluid_name, Tc=None):
+    def compute_gamma_pure(self, T, fluid_name, key, Tc=None):
         """
         Compute Interfacial tension (IFT) for a fluid at temperature T.
 
@@ -126,16 +126,29 @@ class InterfacialTension:
         if len(s) != len(n):
             raise ValueError("Length of s and n must be equal")
 
-        if T <= Tc_final:
-            gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+        if key == 'Parachor':
+        
+            if T <= Tc_final:
+                gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
 
-        if T > Tc_final:
-            print(f"Given temperature is greater than Tc ({Tc_final}) for {fluid_name}")
-            print(f"Computing interfacial tension at T = 0.9*{Tc_final}")
-            T = 0.9 * Tc_final
-            gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+            if T > Tc_final:
+                print(f"Given temperature is greater than Tc ({Tc_final}) for {fluid_name}")
+                print(f"Computing interfacial tension at T = 0.9*{Tc_final}")
+                T = 0.9 * Tc_final
+                gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+        
+        elif key == "WSD":
             
-            return gamma_T * 1e3, T  # Convert to mN/m
+            if T <= Tc_final:
+                gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+            
+            if T > Tc_final:
+                gamma_T = 0    
+        
+        else:
+            
+            print("The key should be either Parachor or WSD")
+            gamma_T = np.NaN 
 
         return gamma_T * 1e3, T  # Convert to mN/m
 
@@ -159,19 +172,14 @@ class InterfacialTension:
             raise ValueError("All inputs must be positive")
 
         delta_rho = rho_l - rho_v               # [mol/cm³]
-        gamma_SI = gamma                        # in  mN/m
-        parachor = gamma_SI**(1/n) / delta_rho
+        gamma_SI  = gamma                        # in  mN/m
+        parachor  = gamma_SI**(1/n) / delta_rho
         
         return parachor
 
-    def REFPROP_MIXTURE(
-        self,
-        mixture: str,
-        z: list[float],
-        T: float,
-        pressures_bar,
-        kij: float = 0.0,
-    ):
+    def REFPROP_MIXTURE(self,mixture: str,z: list[float],T: float,pressures_bar,
+                        kij: float = 0.0, phi_ij=1.0):
+        
         """
         Compute mixture Interfacial tension over one or more pressures (bar).
 
@@ -200,13 +208,13 @@ class InterfacialTension:
         else:
             pressures_bar = [pressures_bar]
         
-        components = mixture.split(";")
-        ncomp = len(components)
-        pressures_bar = list(pressures_bar)
+        components      = mixture.split(";")
+        ncomp           = len(components)
+        pressures_bar   = list(pressures_bar)
 
         # --- per-component molar masses & parachor numbers at Teff (from pure gamma)
-        MOLAR_MASSES = []
-        parachor_numbers = []
+        MOLAR_MASSES        = []
+        parachor_numbers    = []
 
         # print(f"Preparing pure-component data at T={T} K")
         for comp in components:
@@ -215,7 +223,7 @@ class InterfacialTension:
             MOLAR_MASSES.append(MM)
 
             # Pure gamma (may switch to Teff=0.9Tc if T>Tc)
-            gamma_val_mNpm, Teff = self.compute_gamma_pure(T, comp, Tc=None)
+            gamma_val_mNpm, Teff = self.compute_gamma_pure(T, comp, key='Parachor', Tc=None)
 
             liq = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 0, [1.0])
             vap = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 1, [1.0])
@@ -232,13 +240,16 @@ class InterfacialTension:
             parachor_numbers.append(P_i)
 
         # --- sweep pressures
-        results_gamma = []
+        results_gamma_Parachor = []
+        results_gamma_WSD      = []
+                
         for Pbar in pressures_bar:
             print(f"\nCalculating mixture gamma at T={T} K, P={Pbar} bar for {mixture}")
 
             mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar/10.0, z)
-            xL = np.array(mix.x[:ncomp])
-            yV = np.array(mix.y[:ncomp])
+            
+            xL  = np.array(mix.x[:ncomp])
+            yV  = np.array(mix.y[:ncomp])
 
             rhoL_kg_m3 = mix.Output[1]
             rhoV_kg_m3 = mix.Output[2]
@@ -251,25 +262,36 @@ class InterfacialTension:
             rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
             rhoV_mol_cm3 = (rhoV_kg_m3 / MM_V) * 1e-3
 
-            gamma_mix = self.compute_gamma_mixture(
-                x=xL.tolist(),
-                y=yV.tolist(),
-                rho_l=rhoL_mol_cm3,
-                rho_v=rhoV_mol_cm3,
-                parachor_numbers=parachor_numbers,
-                kij=kij
-            )
-            print(f"Interfacial tension: {gamma_mix:.6f} mN/m")
-            results_gamma.append(gamma_mix)
+            gamma_mix_Parachor = self.compute_gamma_Parachor(
+                                    x=xL.tolist(),
+                                    y=yV.tolist(),
+                                    rho_l=rhoL_mol_cm3,
+                                    rho_v=rhoV_mol_cm3,
+                                    parachor_numbers=parachor_numbers,
+                                    kij=kij)
+            
+            print(f"Interfacial tension: {gamma_mix_Parachor:.6f} mN/m")
+            results_gamma_Parachor.append(gamma_mix_Parachor)
+            
+            gamma_mix_WSD = self.compute_gamma_WSD(
+                                    T=T, comp = components,
+                                    x=xL.tolist(),
+                                    y=yV.tolist(),
+                                    rho_l=rhoL_mol_cm3,
+                                    rho_v=rhoV_mol_cm3,
+                                    phi=phi_ij)
+            
+            print(f"Interfacial tension: {gamma_mix_WSD:.6f} mN/m")
+            results_gamma_WSD.append(gamma_mix_WSD)
 
-        return pressures_bar, results_gamma
+        return pressures_bar, results_gamma_Parachor, results_gamma_WSD
 
-    def compute_gamma_mixture(self, x, y, rho_l, rho_v, parachor_numbers, kij=0.0):
+    def compute_gamma_Parachor(self, x, y, rho_l, rho_v, parachor_numbers, kij=0.0):
         """
-        Compute Interfacial tension for a mixture using the parachor method.
+        Compute Interfacial tension of a mixture using the parachor method.
 
         Parameters:
-        - x, y : mole fractions (lists) for liquid and vapor
+        - x, y : mole fractions (lists) for liquid and vapor phases
         - rho_l, rho_v : densities [mol/cm^3]
         - parachor_numbers : list of component parachors (P_i)
         - kij : scalar or matrix of binary interaction parameters (default 0)
@@ -297,6 +319,132 @@ class InterfacialTension:
         P_l = sum(x[i] * x[j] * P_ij(i, j) for i in range(N) for j in range(N))
         P_v = sum(y[i] * y[j] * P_ij(i, j) for i in range(N) for j in range(N))
 
-        gamma_mix = (rho_l * P_l - rho_v * P_v) ** n
+        gamma_mix_Parachor = (rho_l * P_l - rho_v * P_v) ** n
         
-        return gamma_mix
+        return gamma_mix_Parachor
+    
+    # Created by Darshan on 2025-10-01
+    
+    def compute_gamma_WSD(self, T, comp, x, y, rho_l, rho_v, phi=1.0):
+        """
+        Compute Interfacial tension of a mixture using the Winterfeld-Scriven-Davis method.
+        DOI:10.1002/aic.690240610
+        
+        Matrix form: gamma = a^T G a, where
+        a_i = (x_i*rho_l - y_i*rho_v) / (n^0_{i,l} - n^0_{i,v})
+        G_ii = gamma_i^0
+        G_ij = Phi_ij * sqrt(gamma_i^0 * gamma_j^0),  i != j
+        
+        If T > Tc of component i, that component is omitted (a_i=0 and G entries
+        in row/col i are zero), so only components with T <= Tc contribute.
+        
+        Parameters
+        ----------
+        T : float
+            Temperature [K]
+        comp : list[str]
+            Component IDs (REFPROP-compatible), length N
+        x, y : list[float]
+            Mole fractions for liquid and vapor, length N
+        rho_l, rho_v : float
+            Mixture molar densities [mol/cm^3]
+        phi : float or 2D list/array
+            Mixing parameter(s). If scalar, Phi_ij = phi for all i != j.
+            By default it is 1
+
+        Returns:
+        - gamma_mix : Interfacial tension [mN/m]
+        """
+        
+        if not (len(comp) == len(x) == len(y)):
+            raise ValueError("Mismatched input lengths: comp, x, and y must have same length.")
+        N = len(comp)
+
+        def phi_ij(i, j):
+            if hasattr(phi, "__len__"):
+                return phi[i][j]
+            return phi
+
+        # --- Step 0: get Tc_i from the JSON so we can decide which components are active ---
+        Tc_list = []
+        for ci in comp:
+            Tc_i, _s, _n = self.get_fluid_params(ci)
+            if Tc_i is None:
+                raise ValueError(f"No Tc found for {ci} in JSON.")
+            Tc_list.append(Tc_i)
+
+        active = [T <= Tc_i for Tc_i in Tc_list]
+        
+        if not any(active):
+            return 0.0  # nothing contributes above all critical temps
+    
+        # --- Step 1: Pure-component data at T (saturated liquid/vapor) ---
+        
+        # We need: n0_i = (n_{i,l}^0 - n_{i,v}^0) [mol/cm^3], and gamma_i^0 [mN/m]
+        n0      = np.zeros(N)        # pure liquid–vapor molar-density difference
+        gamma0  = np.zeros(N)        # pure interfacial tension
+        
+        for i, ci in enumerate(comp):
+            
+            if not active[i]:
+                n0[i] = 1.0      # dummy to avoid division by zero; a_i will be forced to 0 below
+                gamma0[i] = 0.0
+                continue
+
+            MM = self.RP.REFPROPdll(ci, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0]  # Molar mass [g/mol]
+
+            # Densities from REFPROP in kg/m^3 -> convert to mol/cm^3:
+            # (kg/m^3) / (MM[g/mol]*1e-3 kg/g) -> mol/m^3; then /1e6 -> mol/cm^3
+            rhoL_mol_cm3 = self.RP.REFPROPdll(ci, "TQ", "D", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0] / (MM * 1e3)
+            rhoV_mol_cm3 = self.RP.REFPROPdll(ci, "TQ", "D", self.SI_BASE, 0, 0, T, 1, [1.0]).Output[0] / (MM * 1e3)
+
+            n0[i] = rhoL_mol_cm3 - rhoV_mol_cm3  # denominator for a_i
+
+            if abs(n0[i]) < 1e-30:
+                # This can happen extremely close to Tc; treat as inactive.
+                active[i] = False
+                n0[i] = 1.0
+                gamma0[i] = 0.0
+                continue
+
+            # Pure interfacial tension [mN/m]
+            gamma0[i], _ = self.compute_gamma_pure(T, ci, key='WSD', Tc=None)
+                    
+        # --- Step 2: Mixture coefficients a_i (from mixture and pure n's) ---
+        # a_i = (x_i*rho_l - y_i*rho_v) / (n^0_{i,l} - n^0_{i,v})
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        a = (x * rho_l - y * rho_v) / n0  # shape (N,)
+        
+        # force inactive ones to 0 so they don't contribute anywhere
+        for i in range(N):
+            if not active[i]:
+                a[i] = 0.0
+        
+        # --- Step 3: Build symmetric interaction matrix G ---
+        # G_ii = gamma_i^0; G_ij = Phi_ij * sqrt(gamma_i^0 * gamma_j^0), i != j
+        
+        G = np.zeros((N, N), dtype=float)
+        for i in range(N):
+            if active[i]:
+                G[i, i] = gamma0[i]
+            for j in range(i + 1, N):
+                if active[i] and active[j]:
+                    gij = phi_ij(i, j) * math.sqrt(gamma0[i] * gamma0[j])
+                    G[i, j] = G[j, i] = gij
+                # else keep zeros if any partner is inactive
+
+        # --- Step 4: Quadratic form ---
+        gamma_mix_WSD = float(a @ G @ a)  # [mN/m]
+        
+        
+        # ---- Step 4: Supercritical correction (Roar correction) ----
+        if not all(active):
+            # sum of liquid mole fractions of inactive species
+            x_inactive_sum = float(np.sum(x[[i for i in range(N) if not active[i]]]))
+            mixcorr = max(0.0, 1.0 - x_inactive_sum)   # guard against tiny negatives
+            gamma_mix_WSD *= mixcorr
+        
+        return gamma_mix_WSD
+        
+    
