@@ -122,4 +122,5 @@ if __name__ == '__main__':
 ## TO DO:
 
 - Python TEST need to be  written
-- Julia Integration using Python Call need to be added (in v0.2.0) 
+- README should be updated
+- Julia Integration using Python Call need to be added (in v0.3.0) 
