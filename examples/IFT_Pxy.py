@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     MIXTURE   = "CO2;Methane"
     z         = [0.95, 0.05]
-    T         = 250.0
+    T         = 270.0
     PRESSURES = np.arange(20.0, 31.0, 0.5)
     kij       = 0.0
     phi_ij    = 1.0
@@ -111,8 +111,8 @@ dft_kij            = pd.read_csv('IFT_binary/pcsaft_CO2_CH4_kij.csv')
 # Sort the DataFrame by Pressure before plotting
 dft_sorted = dft.sort_values(by='Pressure[bar]')
 dft_kij_sorted = dft_kij.sort_values(by='Pressure[bar]')
-plt.plot(dft_sorted['Pressure[bar]'], dft_sorted['surface_tension[mN/m]'], '-', color='k', label='PC-SAFT + cDFT, kij = 0')
-plt.plot(dft_kij_sorted['Pressure[bar]'], dft_kij_sorted['surface_tension[mN/m]'], '--', color='k', label='PC-SAFT + cDFT, kij = 0.0541')
+# plt.plot(dft_sorted['Pressure[bar]'], dft_sorted['surface_tension[mN/m]'], '-', color='k', label='PC-SAFT + cDFT, kij = 0')
+# plt.plot(dft_kij_sorted['Pressure[bar]'], dft_kij_sorted['surface_tension[mN/m]'], '--', color='k', label='PC-SAFT + cDFT, kij = 0.0541')
 plt.plot(P_bub, gamma_Parachor, label="Parachor")
 plt.plot(P_bub, gamma_WSD, label="WSD")
 plt.xlabel("Pressure [bar]")
