@@ -123,4 +123,4 @@ if __name__ == '__main__':
 
 - Python TEST need to be  written
 - README should be updated
-- Julia Integration using Python Call need to be added (in v0.3.0) 
+- Julia Integration using Python Call need to be added (in v0.3.0)

@@ -88,7 +88,7 @@ if __name__ == '__main__':
 # _____________________ Interfacial Tension Calculations _____________________ #
 
     gamma_bub = model.gamma_pxy(MIXTURE, T, P_bub, x_bub, y_bub, rhoL_bub_mol_cm3, rhoV_bub_mol_cm3,
-                                kij, phi_ij, verbose=False)
+                                kij, phi_ij, verbose=False, enforce_monotone=True)
     
     P_bub             = gamma_bub["P_bar"]
     gamma_Parachor    = gamma_bub['gamma_Parachor_mNpm']

@@ -402,7 +402,6 @@ class InterfacialTension:
             )
             parachor_numbers.append(P_i)
 
-        # --- sweep pressures
         results_gamma_Parachor = []
         results_gamma_WSD      = []
                 
@@ -440,10 +439,6 @@ class InterfacialTension:
             results_gamma_Parachor.append(gamma_mix_Parachor)
             results_gamma_WSD.append(gamma_mix_WSD)
             
-            # # Debug prints
-            # print(f"Interfacial tension: {gamma_mix_Parachor:.6f} mN/m")
-            # print(f"Interfacial tension: {gamma_mix_WSD:.6f} mN/m")
-            
         return pressures_bar, results_gamma_Parachor, results_gamma_WSD
     
     def apply_mask_and_sort(self, P, arrays):
@@ -471,6 +466,66 @@ class InterfacialTension:
         arrays = {k: v[idx] for k, v in arrays.items()}
         
         return P, arrays
+    
+    def decreasing_mask(self, P, gamma, rel_drop=0.20, abs_drop=0.2, near_zero=1e-4):
+        """
+        Remove isolated downward spikes in gamma(P) (V-shaped sudden drops).
+
+        Parameters
+        ----------
+        P : array-like [bar]
+        gamma : array-like [mN/m]
+        rel_drop : float
+            Minimum relative drop vs. neighbors to flag a spike (e.g. 0.20 = 20%).
+        abs_drop : float
+            Minimum absolute drop [mN/m] vs. neighbors to flag a spike.
+        near_zero : float
+            If gamma[i] < near_zero but neighbors are much larger, treat as spike.
+
+        Returns
+        -------
+        keep : boolean array, same shape as P
+            True for points to keep, False for spikes to remove.
+        idx_sort : argsort indices used to sort by pressure
+        """
+        P = np.asarray(P, float)
+        g = np.asarray(gamma, float)
+        n = len(g)
+        idx_sort = np.argsort(P)
+        g_sorted = g[idx_sort]
+
+        keep_sorted = np.ones(n, dtype=bool)
+
+        for i in range(1, n-1):
+            gi_prev = g_sorted[i-1]
+            gi      = g_sorted[i]
+            gi_next = g_sorted[i+1]
+
+            # Must have finite triplet
+            if not (np.isfinite(gi_prev) and np.isfinite(gi) and np.isfinite(gi_next)):
+                continue
+
+            # Typical scale to compare against (use the larger neighbor)
+            scale = max(abs(gi_prev), abs(gi_next), 1.0)  # avoid scale~0
+
+            # Conditions for a "V-shaped" downward spike at i:
+            #  1) current point far below BOTH neighbors (abs AND relative)
+            big_abs_drop = (min(gi_prev, gi_next) - gi) > abs_drop
+            big_rel_drop = (min(gi_prev, gi_next) - gi) > rel_drop * scale
+
+            #  2) and the series *rebounds* after the spike
+            rebound = (gi_next - gi) > max(abs_drop, rel_drop * scale)
+
+            #  3) also treat near-zero blips as spikes if neighbors are not near-zero
+            near_zero_blip = (gi < near_zero) and (max(gi_prev, gi_next) > 5*near_zero)
+
+            if (big_abs_drop and big_rel_drop and rebound) or near_zero_blip:
+                keep_sorted[i] = False
+
+        # Map mask back to original order
+        keep = np.zeros_like(keep_sorted, dtype=bool)
+        keep[idx_sort] = keep_sorted
+        return keep, idx_sort
 
     def RP_PXY(self, mixture: str, T: float, npts: int,
                     x1_grid=None, y1_grid=None, clip=1e-4, 
@@ -629,7 +684,8 @@ class InterfacialTension:
         return pxy_out
 
     def gamma_pxy(self, mixture: str, T: float, P: list[float], x: list[float], y: list[float],
-                 rhoL: list[float], rhoV: list[float],kij: float = 0.0, phi_ij=1.0, verbose: bool = False):
+                 rhoL: list[float], rhoV: list[float],kij: float = 0.0, phi_ij=1.0, verbose: bool = False,
+                 enforce_monotone: bool = True, rel_tol=0.05, abs_tol=1e-6):
         """
         Compute the interfacial tension (IFT) of a binary mixture along its
         phase envelope (Pxy diagram) at fixed temperature.
@@ -788,7 +844,31 @@ class InterfacialTension:
                 rho_l=rhoLi, rho_v=rhoVi,phi=phi_ij)
 
             if verbose:
-                print(f"[{i}] P={P_f[i]:.3f} bar | gamma_P={gamma_par[i]:.6f} mN/m | gamma_WSD={gamma_wsd[i]:.6f} mN/m")
+                print(f"[{i}] P={P_f[i]:.3f} bar | gamma_P={gamma_par[i]:.6f} mN/m | gamma_WSD={gamma_wsd[i]:.6f} mN/m")   
+        
+        # --- Sort by pressure (nice, ordered outputs)
+        idx_sort = np.argsort(P_f)
+        P_f       = P_f[idx_sort]
+        x_f       = x_f[idx_sort]
+        y_f       = y_f[idx_sort]
+        rhoL_f    = rhoL_f[idx_sort]
+        rhoV_f    = rhoV_f[idx_sort]
+        gamma_par = gamma_par[idx_sort]
+        gamma_wsd = gamma_wsd[idx_sort]
+
+        # --- Enforce monotone-decreasing gamma(P): drop bumps beyond tolerances
+        if enforce_monotone:
+            keep_par, _ = self.decreasing_mask(P_f, gamma_par, rel_drop=0.20, abs_drop=0.2, near_zero=1e-3)
+            keep_wsd, _ = self.decreasing_mask(P_f, gamma_wsd, rel_drop=0.20, abs_drop=0.2, near_zero=1e-3)
+            keep = keep_par & keep_wsd
+
+            P_f       = P_f[keep]
+            x_f       = x_f[keep]
+            y_f       = y_f[keep]
+            rhoL_f    = rhoL_f[keep]
+            rhoV_f    = rhoV_f[keep]
+            gamma_par = gamma_par[keep]
+            gamma_wsd = gamma_wsd[keep]
 
         return {
             "P_bar": P_f,
