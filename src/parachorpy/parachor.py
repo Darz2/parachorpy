@@ -5,6 +5,9 @@
 import json,os,re,math,numpy as np, collections.abc
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 from pathlib import Path
+from scipy.constants import Avogadro, Boltzmann
+from scipy.optimize import brentq
+from si_units import PASCAL, BAR
 
 class InterfacialTension:
     def __init__(self, json_files):
@@ -402,9 +405,16 @@ class InterfacialTension:
             )
             parachor_numbers.append(P_i)
 
-        results_gamma_Parachor = []
-        results_gamma_WSD      = []
-                
+        results_gamma_Parachor  = []
+        results_gamma_WSD       = []
+        
+        results_MM_L            = []
+        results_MM_V            = []
+        results_rhoL_kg_m3      = []
+        results_rhoV_kg_m3      = []   
+        results_xL              = []
+        results_yV              = []     
+        
         for Pbar in pressures_bar:
             
             # # Debug prints 
@@ -415,12 +425,21 @@ class InterfacialTension:
             xL  = np.array(mix.x[:ncomp])
             yV  = np.array(mix.y[:ncomp])
 
+            results_xL.append(xL)
+            results_yV.append(yV)
+            
             rhoL_kg_m3 = mix.Output[1]
             rhoV_kg_m3 = mix.Output[2]
-
+            
+            results_rhoL_kg_m3.append(rhoL_kg_m3)
+            results_rhoV_kg_m3.append(rhoV_kg_m3)
+            
             # phase molar masses (kg/kmol == g/mol numerically)
             MM_L = float(np.sum(xL * MOLAR_MASSES))
             MM_V = float(np.sum(yV * MOLAR_MASSES))
+            
+            results_MM_L.append(MM_L)
+            results_MM_V.append(MM_V)
 
             # kg/m3 -> (kg/kmol) -> kmol/m3 -> mol/cm3
             rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
@@ -439,7 +458,8 @@ class InterfacialTension:
             results_gamma_Parachor.append(gamma_mix_Parachor)
             results_gamma_WSD.append(gamma_mix_WSD)
             
-        return pressures_bar, results_gamma_Parachor, results_gamma_WSD
+        return pressures_bar, results_gamma_Parachor, results_gamma_WSD, \
+            results_xL, results_yV, results_rhoL_kg_m3, results_rhoV_kg_m3, results_MM_L, results_MM_V
     
     def apply_mask_and_sort(self, P, arrays):
         """
@@ -878,4 +898,88 @@ class InterfacialTension:
             "y": y_f,
             "rhoL": rhoL_f,
             "rhoV": rhoV_f,
+        }
+        
+    def TP_DIAGRAM(self, mixture: str, z: list[float], T: float, verbose: bool = False):
+        """
+        Compute the TP phase envelope point (at fixed T) for a binary mixture using REFPROP.
+
+        Parameters
+        ----------
+        mixture : str
+            REFPROP mixture string, e.g. "CO2;Methane".
+            The order of components in this string defines the order in mole fraction array `z`.
+        z : list[float]
+            Overall composition (same order as `mixture` components). Must sum to unity.
+        T : float
+            Temperature [K].
+        verbose : bool, optional
+            If True, print debug information.
+
+        Returns
+        -------
+        out : dict
+            {
+            'bubble': {'x', 'y', 'P_bar'},
+            'dew'   : {'x', 'y', 'P_bar'}
+            }
+            - Bubble point (Q=0): liquid overall; returns vapor-in-equilibrium 'y'.
+            Here, x ≈ z, y = res_liq.y
+            - Dew point (Q=1): vapor overall; returns liquid-in-equilibrium 'x'.
+            Here, y ≈ z, x = res_vap.x
+
+        Notes
+        -----
+        - Uses REFPROP's TQ flash at Q=0 and Q=1.
+        - Pressure unit conversion to bar follows your existing convention (*10).
+        """
+        comps = mixture.split(';')
+        if len(comps) != 2:
+            raise ValueError("TP_DIAGRAM supports binary mixtures only, e.g. 'CO2;Methane'.")
+
+        if abs(sum(z) - 1.0) > 1e-6:
+            raise ValueError(f"Overall mole fractions do not sum to 1 (sum={sum(z)})")
+
+        z = np.asarray(z, dtype=float)
+
+        # --- Critical T check ---
+        try:
+            Tc = self.RP.REFPROPdll(mixture, "C", "TCRIT", self.SI_BASE, 0, 0, 0, 0, z.tolist()).Output[0]
+        except Exception as e:
+            raise RuntimeError(f"Failed to get Tc for {mixture} from REFPROP.") from e
+
+        if T >= Tc:
+            raise ValueError(f"TP_DIAGRAM requires T < Tc (here T={T} K >= Tc={Tc} K).")
+
+        self.RP.FLAGSdll('GERG', 1)
+        
+        # --- Saturation states at given T ---
+        # Q = 0 -> saturated liquid (bubble point)
+        res_liq = self.RP.REFPROPdll(mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 0.0, z)
+        # Q = 1 -> saturated vapor (dew point)
+        res_vap = self.RP.REFPROPdll(mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 1.0, z)
+
+        # Pressures (keep your conversion factor)
+        P_bubble_bar = res_liq.Output[1] * 10.0  # bubble: Q=0
+        P_dew_bar    = res_vap.Output[1] * 10.0  # dew:    Q=1
+
+        # Equilibrium compositions
+        # At bubble: overall is liquid -> x ≈ z, y from res_liq.y
+        x_bubble = z.tolist()
+        y_bubble = list(res_liq.y)  # vapor in eq. with sat. liquid
+
+        # At dew: overall is vapor -> y ≈ z, x from res_vap.x
+        x_dew = list(res_vap.x)     # liquid in eq. with sat. vapor
+        y_dew = z.tolist()
+
+        if verbose:
+            print(f"T = {T} K")
+            print(f"Critical Temperature (Tc): {Tc:.4f} K")
+            print(f"Bubble: P = {P_bubble_bar:.6g} bar, x = {x_bubble}, y = {y_bubble}")
+            print(f"Dew   : P = {P_dew_bar:.6g} bar, x = {x_dew}, y = {y_dew}")
+
+        return {
+            'Tc': Tc,
+            'bubble': {'x': x_bubble, 'y': y_bubble, 'P_bar': P_bubble_bar},
+            'dew'   : {'x': x_dew,    'y': y_dew,    'P_bar': P_dew_bar}
         }

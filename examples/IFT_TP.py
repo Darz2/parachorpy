@@ -13,7 +13,7 @@ if __name__ == '__main__':
     MIXTURE   = "CO2;Methane"
     z         = [0.95, 0.05]
     T         = 250.0
-    PRESSURES = np.arange(20.0, 31.0, 0.5)
+    PRESSURES = np.arange(15, 31.0, 0.5)
     kij       = 0.0
     phi_ij    = 1.0
 
