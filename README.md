@@ -140,9 +140,9 @@ if __name__ == '__main__':
    [https://doi.org/10.1007/s10765-023-03230-0](https://doi.org/10.1007/s10765-023-03230-0) 
 
 5. **Raju, D.; Skartlien, R.; Ramdin, M.; Vlugt, T. J. H. (2025)**  
-   *Vapor–Liquid Interfacial Properties of CO2 Mixtures for Sequestration Applications: Molecular Simulations, Classical Density Functional Theory, and Equations of State*  
-   Industrial & Engineering Chemistry Research.  
-   https://doi.org/10.1021/acs.iecr.5c04932
+  Vapor–Liquid Interfacial Properties of CO2 Mixtures for Sequestration Applications: Molecular Simulations, Classical Density Functional Theory, and Equations of State  
+  Industrial & Engineering Chemistry Research.  
+  https://doi.org/10.1021/acs.iecr.5c04932
 
 > **Note:** More correlations can be added for n-alkanes, ethers, and esters.
 
