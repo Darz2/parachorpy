@@ -1,0 +1,167 @@
+Metadata-Version: 2.4
+Name: parachorpy
+Version: 0.1.0
+Summary: Parachor-model surface tension calculations
+Author-email: Darshan Raju <d.raju@tudelft.nl>
+License: Creative Commons Attribution 4.0 International Public License
+        (CC BY 4.0)
+        
+        By exercising the Licensed Rights (defined below), You accept and agree to be bound by the terms and conditions of this Creative Commons Attribution 4.0 International Public License ("Public License"). To the extent this Public License may be interpreted as a contract, You are granted the Licensed Rights in consideration of Your acceptance of these terms and conditions, and the Licensor grants You such rights in consideration of benefits the Licensor receives from making the Licensed Material available under these terms and conditions.
+        
+        You are free to:
+        - Share — copy and redistribute the material in any medium or format
+        - Adapt — remix, transform, and build upon the material for any purpose, even commercially.
+        
+        Under the following terms:
+        - Attribution — You must give appropriate credit, provide a link to the license, and indicate if changes were made. You may do so in any reasonable manner, but not in any way that suggests the licensor endorses you or your use.
+        
+        No additional restrictions — You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits.
+        
+        Notices:
+        You do not have to comply with the license for elements of the material in the public domain or where your use is permitted by an applicable exception or limitation.
+        No warranties are given. The license may not give you all of the permissions necessary for your intended use. For example, other rights such as publicity, privacy, or moral rights may limit how you use the material.
+        
+        Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+        
+        ---
+        
+        Copyright (c) 2025 Darshan Raju
+        
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: Other/Proprietary License
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: test
+Requires-Dist: pytest>=8; extra == "test"
+Requires-Dist: pytest-cov>=5; extra == "test"
+Dynamic: license-file
+
+# parachorpy
+
+`parachorpy` is a Python package that calculates **Vapor-liquid interfcial tension (IFT) of pure fluids** using emperical correlations [1,2] and **Vapor-liquid IFT of mixtures** using Parachor model [3]. It supports loading JSON data sources containing fluid-specific coefficients which are required to calculate IFTs.
+
+## Features
+
+- Read and retrive fluid-specific empercial coefficients (![s](https://latex.codecogs.com/svg.latex?s_i), ![n](https://latex.codecogs.com/svg.latex?n_i), and optionally ![Tc](https://latex.codecogs.com/svg.latex?T_c)) from JSON files.
+- Compute IFTs of pure fluids ![gamma](https://latex.codecogs.com/svg.latex?\gamma(T)) using the correlation,
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma(T)=\sum_i%20s_i\left(1-\frac{T}{T_c}\right)^{n_i}," alt="\gamma(T) = \sum_i s_i (1 - T/T_c)^{n_i}">
+</p>
+
+- Compute IFTs of mixtures using Parachor model,
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\left(\rho^{L}_{\mathrm{mix}}\sum_{j=1}^{N}\sum_{i=1}^{N}x_i%20x_j%20\mathcal{P}_{ij}-\rho^{V}_{\mathrm{mix}}\sum_{j=1}^{N}\sum_{i=1}^{N}y_i%20y_j%20\mathcal{P}_{ij}\right)^n," alt="\gamma_{\mathrm{mix}} = (\rho^L \sum_{j=1}^N \sum_{i=1}^N x_i x_j \mathcal{P}_{ij} - \rho^V \sum_{j=1}^N \sum_{i=1}^N y_i y_j \mathcal{P}_{ij})^n">
+</p>
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{ij}=(1-\delta_{ij})\frac{\mathcal{P}_{i}+\mathcal{P}_{j}}{2}," alt="\mathcal{P}_{ij} = (1 - \delta_{ij}) \frac{\mathcal{P}_{i} + \mathcal{P}_{j}}{2}">
+</p>
+
+- ![p_ij](https://latex.codecogs.com/svg.latex?\mathcal{P}_{ij}) is the cross Parachor term calculated using the component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) and the fit parameter ![delta_ij](https://latex.codecogs.com/svg.latex?\delta_{ij}) (similar to binary interaction parameter).
+- The component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) is obtained at the given temperature of the mixture, ![{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?{T_\mathrm{mix}}) using the following expression,
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}" alt="\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}">,
+</p>
+
+- ![n](https://latex.codecogs.com/svg.latex?n) is the exponential constant of the Parachor model equal to 3.87 [4].
+- If ![T_{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?T_{\mathrm{mix}}) > 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) of the component ![i](https://latex.codecogs.com/svg.latex?i) in the mixture then ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is computed at 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) for numerical stability. The same approach is also applied in REFPROP V10.
+- The Parachor model is used in addition with other Equation of State (EoS) models (Peng–Robinson, SRK, GERG-2008, EoS-CG, etc.) to compute ![rho^L_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^L_\mathrm{mix}), ![rho^V_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^V_\mathrm{mix}), ![P(T)_{i}](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}(T)), ![rho^L_i](https://latex.codecogs.com/svg.latex?\rho^L_i), ![rho^V](https://latex.codecogs.com/svg.latex?\rho^V_i), ![x](https://latex.codecogs.com/svg.latex?x), and ![y](https://latex.codecogs.com/svg.latex?y).
+- `parachorpy` can be used as a plugin with other thermodynamic packages like Clapeyron, FeOs and REFPROP to compute IFTs of pure fluids and mixtures.
+
+## Installation
+
+Git clone the package and install the package,
+
+```bash
+git clone https://github.com/Darz2/parachorpy.git
+pip install .
+```
+
+External thermodynamic packages are needed to do EoS calcualtions in addition to Python's standard libraries.
+
+For example, if one is using REFPROP to do EoS calculations, python wrapper of REFPROP and the corresponding REFPROP library files will be required.
+
+```bash
+pip install ctREFPROP
+```
+
+If one is using Clapeyron.jl, then using PythonCall in julia can be used to calculate IFTs using `compute_gamma_pure`, `compute_gamma_mixture` and `parachor_number` functions in InterfacialTension class.
+
+## JSON Input Format
+
+Each JSON file must contain a list of dictionaries, each describing one fluid. Example:
+
+```json
+[
+  {
+    "Fluid": "methane",
+    "Tc": 190.56,
+    "s": [0.2358, 0.0121],
+    "n": [1.23, 2.34]
+  },
+  {
+    "Fluid": "argon",
+    "Tc": 150.86,
+    "s": [0.152],
+    "n": [1.26]
+  }
+]
+```
+
+## Example Usage
+
+```python
+from parachorpy import parachor as IFT
+import numpy as np
+
+if __name__ == '__main__':
+    
+    json_files  = ["Mulero_2012.json"]
+    model       = IFT.InterfacialTension(json_files)
+    model.ctREFPROP_init('~/Software/REFPROP_BETA/REFPROP-cmake/build', gerg_enable=1)
+
+    MIXTURE   = "CO2;Methane"
+    z         = [0.95, 0.05]
+    T         = 250.0
+    PRESSURES = np.arange(20.0, 31.0, 5.0)
+    kij       = 0.0
+
+    Pbar, gamma = model.REFPROP_MIXTURE(MIXTURE, z, T, PRESSURES, kij)
+
+    for P, s in zip(Pbar, gamma):
+        print(f"P = {P:.1f} bar | gamma = {s:.4f} mN/m")
+```
+
+## References
+
+1. **Cachadina, I., Vega, L. F., & de Miguel, E. (2015)**  
+   Empirical correlations for the surface tension of pure fluids  
+   *Journal of Chemical Thermodynamics*, 87, 162–170.  
+   [https://doi.org/10.1063/1.4921749](https://doi.org/10.1063/1.4921749)  
+
+2. **Mulero, A., Cachadina, I., & Parra, M. I. (2012)**  
+   Recommended correlations for the surface tension of common fluids  
+   *Journal of Physical and Chemical Reference Data*, 41(4), 043105.  
+   [https://doi.org/10.1063/5.0277723](https://doi.org/10.1063/5.0277723)  
+
+3. **Sugden, S. (1924)**  
+   A relation between surface tension, density, and chemical composition  
+   *Journal of the Chemical Society, Transactions*, 125, 32–41.  
+   [https://doi.org/10.1039/CT9242500032](https://doi.org/10.1039/CT9242500032)
+  
+4. **Log, A. M.; Diky, V.; Huber, M. L. (2023)**  
+   Assessment of a parachor model for the surface tension of binary mixtures  
+   *International Journal of Thermophysics*, 44, Article 110.  
+   [https://doi.org/10.1007/s10765-023-03230-0](https://doi.org/10.1007/s10765-023-03230-0)  
+
+> **Note:** More correlations can be added for n-alkanes, ethers, and esters.
+
+## TO DO:
+
+- Python TEST need to be  written
+- README should be updated
+- Julia Integration using Python Call need to be added (in v0.3.0)

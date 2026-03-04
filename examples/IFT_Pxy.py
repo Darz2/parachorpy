@@ -22,9 +22,9 @@ def make_branch_df(branch, P, x, y, rhoLkg, rhoVkg, rhoLmol, rhoVmol, Mliq, Mvap
     "Branch": branch,
     "Pressure [bar]": P[mask],
     "x_CO2 [-]": [xi[0] for i, xi in enumerate(x) if mask[i]],
-    "x_CH4 [-]": [xi[1] for i, xi in enumerate(x) if mask[i]],
+    "x_Ar [-]": [xi[1] for i, xi in enumerate(x) if mask[i]],
     "y_CO2 [-]": [yi[0] for i, yi in enumerate(y) if mask[i]],
-    "y_CH4 [-]": [yi[1] for i, yi in enumerate(y) if mask[i]],
+    "y_Ar [-]": [yi[1] for i, yi in enumerate(y) if mask[i]],
     "rho_L [kg/m3]": rhoLkg[mask],
     "rho_V [kg/m3]": rhoVkg[mask],
     "rho_L_mol_cm3 [mol/cm3]": rhoLmol[mask],
@@ -38,17 +38,17 @@ if __name__ == '__main__':
     json_files  = ["Cachadina_2015.json","Mulero_2012.json"]
     # json_files  = ["Mulero_2012.json"]
     model       = IFT.InterfacialTension(json_files)
-    model.ctREFPROP_init('~/Software/REFPROP_BETA/REFPROP-cmake/build', gerg_enable=1)
+    model.ctREFPROP_init('~/Software/REFPROP/REFPROP-cmake/build', gerg_enable=1)
 
-    MIXTURE    = "CO2;Hydrogen"
+    MIXTURE    = "CO2;Nitrogen"
     components = MIXTURE.split(";")
-    T          = 270.0
+    T          = 220.0  # K
     kij        = 0.0
     phi_ij     = 1.0
             
     pxy = model.RP_PXY(MIXTURE, T, npts=1000, clip=1e-3, verbose=False, return_densities=True)
     
-    # --- Bubble branch ---
+    # # --- Bubble branch ---
     P_bub               = pxy['bubble']['P_bar']
     x_bub               = pxy['bubble']['x']
     y_bub               = pxy['bubble']['y']
@@ -83,16 +83,17 @@ if __name__ == '__main__':
     
     df_all = pd.concat([df_bubble, df_dew], ignore_index=True)
     df_all.sort_values(by="Pressure [bar]", inplace=True)
-    df_all.to_csv(rf"../DATA/CO2-H2/Pxy_{components[0]}-{components[1]}_{T:.0f}.csv", index=False, encoding="utf-8")
+    df_all.to_csv(rf"../DATA/CO2-N2/Pxy_{components[0]}-{components[1]}_{T:.0f}.csv", index=False, encoding="utf-8")
 
 # _____________________ Interfacial Tension Calculations _____________________ #
 
     gamma_bub = model.gamma_pxy(MIXTURE, T, P_bub, x_bub, y_bub, rhoL_bub_mol_cm3, rhoV_bub_mol_cm3,
-                                kij, phi_ij, verbose=False, enforce_monotone=True)
+                                kij, phi_ij, verbose=True, enforce_monotone=True)
     
     P_bub             = gamma_bub["P_bar"]
     gamma_Parachor    = gamma_bub['gamma_Parachor_mNpm']
     gamma_WSD         = gamma_bub['gamma_WSD_mNpm']
+    WSD_mixcorr       = gamma_bub['mixcorr_WSD']
     x_bub             = gamma_bub['x']
     y_bub             = gamma_bub['y']
     
@@ -101,22 +102,23 @@ if __name__ == '__main__':
                 "x_CO2 [-]": [xi[0] for xi in x_bub],
                 "y_CO2 [-]": [yi[0] for yi in y_bub],
                 "gamma_Parachor [mN/m]": gamma_Parachor,
-                "gamma_WSD [mN/m]": gamma_WSD
+                "gamma_WSD [mN/m]": gamma_WSD,
+                "mixcorr_WSD": WSD_mixcorr
                 }).sort_values(by="P [bar]")
-    df_ift.to_csv(rf"../DATA/CO2-H2/IFT_P_{components[0]}-{components[1]}_{T:.0f}.csv", index=False, encoding="utf-8")
+    df_ift.to_csv(rf"../DATA/CO2-N2/IFT_P_{components[0]}-{components[1]}_{T:.0f}.csv", index=False, encoding="utf-8")
             
-dft                = pd.read_csv('IFT_binary/pcsaft_CO2_CH4.csv')
-dft_kij            = pd.read_csv('IFT_binary/pcsaft_CO2_CH4_kij.csv')
-# Sort the DataFrame by Pressure before plotting
-dft_sorted = dft.sort_values(by='Pressure[bar]')
-dft_kij_sorted = dft_kij.sort_values(by='Pressure[bar]')
-# plt.plot(dft_sorted['Pressure[bar]'], dft_sorted['surface_tension[mN/m]'], '-', color='k', label='PC-SAFT + cDFT, kij = 0')
-# plt.plot(dft_kij_sorted['Pressure[bar]'], dft_kij_sorted['surface_tension[mN/m]'], '--', color='k', label='PC-SAFT + cDFT, kij = 0.0541')
-plt.plot(P_bub, gamma_Parachor, label="Parachor")
-plt.plot(P_bub, gamma_WSD, label="WSD")
-plt.xlabel("Pressure [bar]")
-plt.ylabel("Interfacial Tension [mN/m]")
-plt.title(f"Interfacial Tension vs Pressure for {MIXTURE} at T={T} K")
-plt.legend()
-plt.grid()
-plt.savefig(rf"../DATA/CO2-H2/IFT_P_{components[0]}-{components[1]}_{T:.0f}.png", dpi=300)
+# dft                = pd.read_csv('IFT_binary/pcsaft_CO2_Ar.csv')
+# dft_kij            = pd.read_csv('IFT_binary/pcsaft_CO2_Ar_kij.csv')
+# # Sort the DataFrame by Pressure before plotting
+# dft_sorted = dft.sort_values(by='Pressure[bar]')
+# dft_kij_sorted = dft_kij.sort_values(by='Pressure[bar]')
+# # plt.plot(dft_sorted['Pressure[bar]'], dft_sorted['surface_tension[mN/m]'], '-', color='k', label='PC-SAFT + cDFT, kij = 0')
+# # plt.plot(dft_kij_sorted['Pressure[bar]'], dft_kij_sorted['surface_tension[mN/m]'], '--', color='k', label='PC-SAFT + cDFT, kij = 0.0541')
+# plt.plot(P_bub, gamma_Parachor, label="Parachor")
+# plt.plot(P_bub, gamma_WSD, label="WSD")
+# plt.xlabel("Pressure [bar]")
+# plt.ylabel("Interfacial Tension [mN/m]")
+# plt.title(f"Interfacial Tension vs Pressure for {MIXTURE} at T={T} K")
+# plt.legend()
+# plt.grid()
+# plt.savefig(rf"../DATA/CO2-N2/IFT_P_{components[0]}-{components[1]}_{T:.0f}.png", dpi=300)

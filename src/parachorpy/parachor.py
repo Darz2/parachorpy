@@ -173,7 +173,9 @@ class InterfacialTension:
 
         delta_rho = rho_l - rho_v               # [mol/cm³]
         gamma_SI  = gamma                        # in  mN/m
+
         parachor  = gamma_SI**(1/n) / delta_rho
+        print(f"Parachor number calculated: {parachor:.6f} [kg/m³]ⁿ·mN/m")
         
         return parachor
 
@@ -335,7 +337,7 @@ class InterfacialTension:
             mixcorr = max(0.0, 1.0 - x_inactive_sum)   # guard against tiny negatives
             gamma_mix_WSD *= mixcorr
         
-        return gamma_mix_WSD
+        return gamma_mix_WSD, mixcorr
         
     def gamma_TP(self, mixture: str, z: list[float], T: float,pressures_bar,
                         kij: float = 0.0, phi_ij=1.0):
@@ -806,8 +808,11 @@ class InterfacialTension:
             # Convert to mol/cm^3:
             # mol/m^3 = (kg/m^3) / (kg/mol) = (kg/m^3) / (MM_g/mol * 1e-3)
             # mol/cm^3 = previous / 1e6  => combined: / (MM_g_per_mol * 1e3)
+            
             rhoL_mol_cm3_pure = rhoL_kg_m3 / (MM_g_per_mol * 1e3)
             rhoV_mol_cm3_pure = rhoV_kg_m3 / (MM_g_per_mol * 1e3)
+            
+            print(rhoL_mol_cm3_pure, rhoV_mol_cm3_pure, gamma_i_mNpm)
 
             P_i = self.parachor_number(rhoL_mol_cm3_pure, rhoV_mol_cm3_pure, gamma_i_mNpm)
             parachor_numbers.append(P_i)
@@ -844,8 +849,9 @@ class InterfacialTension:
         rhoL_f  = rhoL[good]
         rhoV_f  = rhoV[good]
 
-        gamma_par = np.empty_like(P_f)
-        gamma_wsd = np.empty_like(P_f)
+        gamma_par   = np.empty_like(P_f)
+        gamma_wsd   = np.empty_like(P_f)
+        mixcorr_wsd = np.empty_like(P_f)
         
         for i in range(len(P_f)):
             xi      = x_f[i, :].tolist()
@@ -859,22 +865,23 @@ class InterfacialTension:
                 parachor_numbers=parachor_numbers,kij=kij)
 
             # WSD
-            gamma_wsd[i] = self.compute_gamma_WSD(
+            gamma_wsd[i], mixcorr_wsd[i] = self.compute_gamma_WSD(
                 T=T, comp=components,x=xi, y=yi,
                 rho_l=rhoLi, rho_v=rhoVi,phi=phi_ij)
 
             if verbose:
-                print(f"[{i}] P={P_f[i]:.3f} bar | gamma_P={gamma_par[i]:.6f} mN/m | gamma_WSD={gamma_wsd[i]:.6f} mN/m")   
+                print(f"[{i}] P={P_f[i]:.3f} bar | gamma_P={gamma_par[i]:.6f} mN/m | gamma_WSD={gamma_wsd[i]:.6f} mN/m | mixcorr={mixcorr_wsd[i]:.6f}")   
         
         # --- Sort by pressure (nice, ordered outputs)
-        idx_sort = np.argsort(P_f)
-        P_f       = P_f[idx_sort]
-        x_f       = x_f[idx_sort]
-        y_f       = y_f[idx_sort]
-        rhoL_f    = rhoL_f[idx_sort]
-        rhoV_f    = rhoV_f[idx_sort]
-        gamma_par = gamma_par[idx_sort]
-        gamma_wsd = gamma_wsd[idx_sort]
+        idx_sort    = np.argsort(P_f)
+        P_f         = P_f[idx_sort]
+        x_f         = x_f[idx_sort]
+        y_f         = y_f[idx_sort]
+        rhoL_f      = rhoL_f[idx_sort]
+        rhoV_f      = rhoV_f[idx_sort]
+        gamma_par   = gamma_par[idx_sort]
+        gamma_wsd   = gamma_wsd[idx_sort]
+        mixcorr_wsd = mixcorr_wsd[idx_sort]
 
         # --- Enforce monotone-decreasing gamma(P): drop bumps beyond tolerances
         if enforce_monotone:
@@ -889,11 +896,13 @@ class InterfacialTension:
             rhoV_f    = rhoV_f[keep]
             gamma_par = gamma_par[keep]
             gamma_wsd = gamma_wsd[keep]
+            mixcorr_wsd = mixcorr_wsd[keep]
 
         return {
             "P_bar": P_f,
             "gamma_Parachor_mNpm": gamma_par,
             "gamma_WSD_mNpm": gamma_wsd,
+            "mixcorr_WSD": mixcorr_wsd,
             "x": x_f,
             "y": y_f,
             "rhoL": rhoL_f,
