@@ -30,6 +30,28 @@
 - If ![T_{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?T_{\mathrm{mix}}) > 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) of the component ![i](https://latex.codecogs.com/svg.latex?i) in the mixture then ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is computed at 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) for numerical stability. The same approach is also applied in REFPROP V10.
 - The Parachor model is used in addition with other Equation of State (EoS) models (Peng–Robinson, SRK, GERG-2008, EoS-CG, etc.) to compute ![rho^L_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^L_\mathrm{mix}), ![rho^V_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^V_\mathrm{mix}), ![P(T)_{i}](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}(T)), ![rho^L_i](https://latex.codecogs.com/svg.latex?\rho^L_i), ![rho^V](https://latex.codecogs.com/svg.latex?\rho^V_i), ![x](https://latex.codecogs.com/svg.latex?x), and ![y](https://latex.codecogs.com/svg.latex?y).
 - `parachorpy` can be used as a plugin with other thermodynamic packages like Clapeyron, FeOs and REFPROP to compute IFTs of pure fluids and mixtures.
+- Compute IFTs of mixtures using the Winterfeld–Scriven–Davis (WSD) model. For a general multicomponent system,
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\sum_{\alpha,\beta}\left(\frac{\rho^{L}_{\alpha}-\rho^{V}_{\alpha}}{\rho^{0,L}_{\alpha}-\rho^{0,V}_{\alpha}}\right)^2\gamma^{0}_{\alpha}\delta_{\alpha,\beta}+\Phi_{\alpha,\beta}\left(\frac{\rho^{L}_{\alpha}-\rho^{V}_{\alpha}}{\rho^{0,L}_{\alpha}-\rho^{0,V}_{\alpha}}\right)\left(\frac{\rho^{L}_{\beta}-\rho^{V}_{\beta}}{\rho^{0,L}_{\beta}-\rho^{0,V}_{\beta}}\right)\sqrt{\gamma^{0}_{\alpha}\gamma^{0}_{\beta}}" alt="WSD general formula">
+</p>
+
+-  Here ![gamma_alpha_0](https://latex.codecogs.com/svg.latex?\gamma^{0}_{\alpha}) and ![gamma_beta_0](https://latex.codecogs.com/svg.latex?\gamma^{0}_{\beta}) are the IFTs of the pure components ![alpha](https://latex.codecogs.com/svg.latex?\alpha) and ![beta](https://latex.codecogs.com/svg.latex?\beta), respectively. ![rho_alpha_0L](https://latex.codecogs.com/svg.latex?\rho^{0,L}_{\alpha}) and ![rho_alpha_0V](https://latex.codecogs.com/svg.latex?\rho^{0,V}_{\alpha}) are the equilibrium liquid and vapor molar densities of the pure component. ![rho_alpha_L](https://latex.codecogs.com/svg.latex?\rho^{L}_{\alpha}) and ![rho_alpha_V](https://latex.codecogs.com/svg.latex?\rho^{V}_{\alpha}) are the liquid and vapor molar densities of component ![alpha](https://latex.codecogs.com/svg.latex?\alpha) in the mixture. ![Phi_ab](https://latex.codecogs.com/svg.latex?\Phi_{\alpha,\beta}\simeq%201) for nonaqueous, weakly polar fluids. The Kronecker delta ![delta_ab](https://latex.codecogs.com/svg.latex?\delta_{\alpha,\beta}) equals one when ![alpha=beta](https://latex.codecogs.com/svg.latex?\alpha=\beta) and zero otherwise.
+- For a binary system where the mixture temperature is below the critical temperature of both components, the WSD model simplifies to,
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\left(\frac{\rho^{L}_{1}-\rho^{V}_{1}}{\rho^{0,L}_{1}-\rho^{0,V}_{1}}\right)^2\gamma^{0}_{1}+\left(\frac{\rho^{L}_{2}-\rho^{V}_{2}}{\rho^{0,L}_{2}-\rho^{0,V}_{2}}\right)^2\gamma^{0}_{2}+2\Phi\left(\frac{\rho^{L}_{1}-\rho^{V}_{1}}{\rho^{0,L}_{1}-\rho^{0,V}_{1}}\right)\left(\frac{\rho^{L}_{2}-\rho^{V}_{2}}{\rho^{0,L}_{2}-\rho^{0,V}_{2}}\right)\sqrt{\gamma^{0}_{1}\gamma^{0}_{2}}" alt="WSD binary formula">
+</p>
+
+- When the mixture temperature exceeds the critical temperature of component 2, the standard WSD formulation reduces to a form in which the supercritical component has no effect on IFT, which is physically unrealistic. To correct for this, an empirical correction is applied,
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\gamma_{\mathrm{mix}}=\left(\frac{\rho^{L}_{1}-\rho^{V}_{1}}{\rho^{0,L}_{1}-\rho^{0,V}_{1}}\right)^2\gamma^{0}_{1}\left(1-\frac{\rho^{L}_{2}}{\rho^{L}_{1}+\rho^{L}_{2}}\right)" alt="WSD corrected supercritical formula">
+</p>
+
+- The correction factor ![1 - x2L](https://latex.codecogs.com/svg.latex?1-x^{L}_{2}) accounts for the IFT-reducing effect of the supercritical component dissolved in the liquid phase, analogous to a surfactant effect. Here ![x2L](https://latex.codecogs.com/svg.latex?x^{L}_{2}=\rho^{L}_{2}/(\rho^{L}_{1}+\rho^{L}_{2})) is the liquid mole fraction of the supercritical component [5].
+
+---
 
 ## Installation
 
@@ -115,7 +137,12 @@ if __name__ == '__main__':
 4. **Log, A. M.; Diky, V.; Huber, M. L. (2023)**  
    Assessment of a parachor model for the surface tension of binary mixtures  
    *International Journal of Thermophysics*, 44, Article 110.  
-   [https://doi.org/10.1007/s10765-023-03230-0](https://doi.org/10.1007/s10765-023-03230-0)  
+   [https://doi.org/10.1007/s10765-023-03230-0](https://doi.org/10.1007/s10765-023-03230-0) 
+
+5. **Raju, D.; Skartlien, R.; Ramdin, M.; Vlugt, T. J. H. (2025)**  
+   *Vapor–Liquid Interfacial Properties of CO2 Mixtures for Sequestration Applications: Molecular Simulations, Classical Density Functional Theory, and Equations of State*  
+   Industrial & Engineering Chemistry Research.  
+   https://doi.org/10.1021/acs.iecr.5c04932
 
 > **Note:** More correlations can be added for n-alkanes, ethers, and esters.
 
