@@ -23,7 +23,7 @@
 - The component-specific Parachor number ![P](https://latex.codecogs.com/svg.latex?\mathcal{P}) is obtained at the given temperature of the mixture, ![{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?{T_\mathrm{mix}}) using the following expression,
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}" alt="\mathcal{P}_{i} = \frac {\gamma^{1/n}}{(\rho^L - \rho^V)}">,
+  <img src="https://latex.codecogs.com/svg.image?\Large \mathcal{P}_{i}=\frac{\gamma^{1/n}}{\rho^{L}-\rho^{V}}" alt="P_i = gamma^(1/n) / (rho^L - rho^V)">
 </p>
 
 - ![n](https://latex.codecogs.com/svg.latex?n) is the exponential constant of the Parachor model equal to 3.87 [4].
