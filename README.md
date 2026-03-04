@@ -52,20 +52,21 @@
 - The correction factor ![1 - x2L](https://latex.codecogs.com/svg.latex?1-x^{L}_{2}) accounts for the IFT-reducing effect of the supercritical component dissolved in the liquid phase, analogous to a surfactant effect. Here ![x2L](https://latex.codecogs.com/svg.latex?x^{L}_{2}=\rho^{L}_{2}/(\rho^{L}_{1}+\rho^{L}_{2})) is the liquid mole fraction of the supercritical component [5].
 
 - Estimate metastable phase limits using Classical Nucleation Theory (CNT).  
-  The nucleation free energy barrier for a spherical nucleus is given by
+  The nucleation rate is given by
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?\Delta%20G^{*}=\frac{16\pi\gamma^{3}}{3(\Delta%20P)^{2}}" alt="Delta G* = 16 pi gamma^3 / (3 Delta P^2)">
+  <img src="https://latex.codecogs.com/svg.latex?J%20=%20K%20\exp\left(-\frac{\Delta%20G^{*}}{k_B%20T}\right)" alt="J = K exp(-Delta G* / k_B T)">
 </p>
 
-- The critical nucleus radius is
+- The free energy barrier for the formation of a critical nucleus is
 
 <p align="center">
-  <img src="https://latex.codecogs.com/svg.latex?r^{*}=\frac{2\gamma}{\Delta%20P}" alt="r* = 2 gamma / Delta P">
+  <img src="https://latex.codecogs.com/svg.latex?\Delta%20G^{*}=\frac{4\pi\gamma%20r_c^{2}}{3}" alt="Delta G* = 4 pi gamma r_c^2 / 3">
 </p>
 
-- Here ![gamma](https://latex.codecogs.com/svg.latex?\gamma) is the interfacial tension and ![\Delta P](https://latex.codecogs.com/svg.latex?\Delta%20P) is the pressure difference between the metastable and stable phases.  
-- Using the computed interfacial tension together with thermodynamic properties from an Equation of State, `parachorpy` can estimate superheated and supercooled metastable limits relevant for phase transitions and nucleation phenomena.
+- Here ![J](https://latex.codecogs.com/svg.latex?J) is the nucleation rate, ![K](https://latex.codecogs.com/svg.latex?K) is the kinetic prefactor, ![gamma](https://latex.codecogs.com/svg.latex?\gamma) is the interfacial tension, ![r_c](https://latex.codecogs.com/svg.latex?r_c) is the critical nucleus radius, ![k_B](https://latex.codecogs.com/svg.latex?k_B) is the Boltzmann constant, and ![T](https://latex.codecogs.com/svg.latex?T) is the temperature.
+- Using the computed interfacial tension together with thermodynamic properties from an Equation of State, `parachorpy` can estimate metastable limits associated with nucleation phenomena.
+
 ---
 
 ## Installation
@@ -164,5 +165,4 @@ if __name__ == '__main__':
 ## TO DO:
 
 - Python TEST need to be  written
-- README should be updated
 - Julia Integration using Python Call need to be added (in v0.3.0)
