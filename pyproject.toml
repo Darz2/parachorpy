@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parachorpy"
-version = "0.1.0"
-description = "Parachor-model surface tension calculations"
+version = "0.2.0"
+description = "Interfacial tension computation of mixtures using parachor correlations and Winterfeld–Scriven–Davis (WSD) model"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [{ name = "Darshan Raju", email = "d.raju@tudelft.nl" }]
