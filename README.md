@@ -51,6 +51,21 @@
 
 - The correction factor ![1 - x2L](https://latex.codecogs.com/svg.latex?1-x^{L}_{2}) accounts for the IFT-reducing effect of the supercritical component dissolved in the liquid phase, analogous to a surfactant effect. Here ![x2L](https://latex.codecogs.com/svg.latex?x^{L}_{2}=\rho^{L}_{2}/(\rho^{L}_{1}+\rho^{L}_{2})) is the liquid mole fraction of the supercritical component [5].
 
+- Estimate metastable phase limits using Classical Nucleation Theory (CNT).  
+  The nucleation free energy barrier for a spherical nucleus is given by
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?\Delta%20G^{*}=\frac{16\pi\gamma^{3}}{3(\Delta%20P)^{2}}" alt="Delta G* = 16 pi gamma^3 / (3 Delta P^2)">
+</p>
+
+- The critical nucleus radius is
+
+<p align="center">
+  <img src="https://latex.codecogs.com/svg.latex?r^{*}=\frac{2\gamma}{\Delta%20P}" alt="r* = 2 gamma / Delta P">
+</p>
+
+- Here ![gamma](https://latex.codecogs.com/svg.latex?\gamma) is the interfacial tension and ![\Delta P](https://latex.codecogs.com/svg.latex?\Delta%20P) is the pressure difference between the metastable and stable phases.  
+- Using the computed interfacial tension together with thermodynamic properties from an Equation of State, `parachorpy` can estimate superheated and supercooled metastable limits relevant for phase transitions and nucleation phenomena.
 ---
 
 ## Installation
