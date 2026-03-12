@@ -17,7 +17,7 @@ if __name__ == '__main__':
     kij       = 0.0
     phi_ij    = 1.0
 
-    Pbar, gamma_Parachor, gamma_WSD = model.gamma_TP(MIXTURE, z, T, PRESSURES, kij, phi_ij)
+    Pbar, gamma_Parachor, gamma_WSD = model.gamma_PT(MIXTURE, z, T, PRESSURES, kij, phi_ij)
     
     for P, s1, s2  in zip(Pbar, gamma_Parachor, gamma_WSD):
         print(f"P = {P:.1f} bar | gamma_Parachor = {s1:.4f} mN/m | gamma_WSD = {s2:.4f} mN/m")

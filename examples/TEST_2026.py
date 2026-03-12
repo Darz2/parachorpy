@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # Created by Darshan on 2026-01-09
 
-#!/usr/bin/env python
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 import os
 

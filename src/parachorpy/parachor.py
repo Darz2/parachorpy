@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 
 # Created by Darshan on 2025-07-15
+# LAST UPDATED: 2025-03-09 by Darshan (Fixed some bugs and genralize the TP diagram to n components)
 
-import json,os,re,math,numpy as np, collections.abc
+import json,os,re,math,numpy as np,pandas as pd, collections.abc
 from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
 from pathlib import Path
-from scipy.constants import Avogadro, Boltzmann
-from scipy.optimize import brentq
-from si_units import PASCAL, BAR
+from scipy.interpolate import PchipInterpolator
 
 class InterfacialTension:
     def __init__(self, json_files):
@@ -31,7 +30,6 @@ class InterfacialTension:
             for jf in json_files:
                 path = Path(jf)
 
-                # If not an absolute/relative path, assume it's in database/
                 if not path.is_absolute() and not path.exists():
                     path = db_dir / jf
 
@@ -108,61 +106,83 @@ class InterfacialTension:
 
         raise ValueError(f"Fluid '{fluid_name}' not found (normalized as '{q}', alias -> '{target}').")
 
+    def get_tmin_ttrp_tc(self, fluid_name: str):
+        """
+        Return Tmin, Ttrp, and Tc [K] for a pure fluid from REFPROP.
+        """
+        res = self.RP.REFPROPdll(
+            fluid_name, "", "TMIN;TTRP;TC", self.SI_BASE, 0, 0, 0, 0, [1.0]
+        )
+        return res.Output[0], res.Output[1], res.Output[2]
+
     def compute_gamma_pure(self, T, fluid_name, key, Tc=None):
         """
-        Compute Interfacial tension (IFT) for a fluid at temperature T.
+        Compute Interfacial tension (IFT) for a pure fluid at temperature T.
 
-        Parameters:
-        - T : float
-        - fluid_name : str
-        - Tc : float (optional) — use only if Tc is not in the JSON
+        For Parachor:
+            T_used = min(max(T, max(TMIN, 1.1*TTRP)), 0.9*TC)
 
-        Returns:
-        - gamma : float (mN/m)
+        For WSD:
+            use T directly if T <= TC, otherwise gamma = 0
+
+        Returns
+        -------
+        gamma : float
+            Interfacial tension [mN/m]
+        T_used : float
+            Temperature actually used in the correlation [K]
         """
-        Tc_json, s, n = self.get_fluid_params(fluid_name)
-        Tc_final = Tc_json if Tc_json is not None else Tc
-
-        if Tc_final is None:
-            raise ValueError(f"No Tc provided in JSON or as input for {fluid_name}")
+        _, s, n = self.get_fluid_params(fluid_name)
 
         if len(s) != len(n):
             raise ValueError("Length of s and n must be equal")
+        
+        Tmin, Ttrp, Tc_final = self.get_tmin_ttrp_tc(fluid_name)
 
         if key == 'Parachor':
-            if T <= Tc_final:
+            
+            if T <= Tc_final and T >= max(Tmin, Ttrp):
                 gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+                T_used = T
 
             if T > Tc_final:
                 print(f"Given temperature is greater than Tc ({Tc_final}) for {fluid_name}")
                 print(f"Computing interfacial tension at T = 0.9*{Tc_final} for Parachor method")
-                T = 0.9 * Tc_final
-                gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+                T_used  = 0.9 * Tc_final
+                gamma_T = sum(si * (1 - T_used / Tc_final)**ni for si, ni in zip(s, n))
+            
+            if T < max(Tmin, Ttrp): # This only happens for computing the parachor number in case of mixtures
+                print(f"Given temperature is less than or equal to max(TMIN, TTRP) for {fluid_name}")
+                print(f"Computing interfacial tension at T = 1.1*max(TMIN, TTRP) for Parachor method for mixtures")
+                T_used = 1.1 * max(Tmin, Ttrp)
+                gamma_T = sum(si * (1 - T_used / Tc_final)**ni for si, ni in zip(s, n))
+            
         
         elif key == "WSD":
             if T <= Tc_final:
                 gamma_T = sum(si * (1 - T / Tc_final)**ni for si, ni in zip(s, n))
+                T_used = T
             
             if T > Tc_final:
-                gamma_T = 0    
+                gamma_T = 0
+                T_used = T
         
         else:
-            print("The key should be either Parachor or WSD")
-            gamma_T = np.NaN 
+            raise ValueError("The key should be either Parachor or WSD")
 
-        return gamma_T * 1e3, T  # Convert to mN/m
+        return gamma_T * 1e3, T_used  # Convert to mN/m
 
     def parachor_number(self,rho_l, rho_v, gamma):
         """
         Calculate the parachor number.
 
         Parameters:
-        - rho_l : float — Liquid density [kg/m³]
-        - rho_v : float — Vapor density [kg/m³]
+        - rho_l : float — Liquid density [kg/m3]
+        - rho_v : float — Vapor density [kg/m3]
         - gamma : float — Interfacial tension [mN/m]
 
         Returns:
-        - P : float — parachor number [kg/m³]ⁿ·mN/m
+        - P : float — parachor number [kg/m3]n ·mN/m
 
         Constant:
         - n : float — exponent in the parachor equation (default: 3.87); REFPROP v10 (Lemmon et al, 2018)
@@ -171,11 +191,11 @@ class InterfacialTension:
         if rho_l <= 0 or rho_v <= 0 or gamma <= 0:
             raise ValueError("All inputs must be positive")
 
-        delta_rho = rho_l - rho_v               # [mol/cm³]
-        gamma_SI  = gamma                        # in  mN/m
+        delta_rho = rho_l - rho_v               # [mol/cm3]
+        gamma_SI  = gamma                       # in  mN/m
 
         parachor  = gamma_SI**(1/n) / delta_rho
-        print(f"Parachor number calculated: {parachor:.6f} [kg/m³]ⁿ·mN/m")
+        print(f"Parachor number calculated: {parachor:.6f} [kg/m3]n ·mN/m")
         
         return parachor
 
@@ -212,12 +232,17 @@ class InterfacialTension:
         P_l = sum(x[i] * x[j] * P_ij(i, j) for i in range(N) for j in range(N))
         P_v = sum(y[i] * y[j] * P_ij(i, j) for i in range(N) for j in range(N))
 
-        gamma_mix_Parachor = (rho_l * P_l - rho_v * P_v) ** n
+        delta_parachor     = rho_l * P_l - rho_v * P_v
+    
+        if delta_parachor <= 0:
+            return np.nan
+        
+        gamma_mix_Parachor = delta_parachor ** n
         
         return gamma_mix_Parachor
     
     # Created by Darshan on 2025-10-01
-    def compute_gamma_WSD(self, T, comp, x, y, rho_l, rho_v, phi=1.0):
+    def compute_gamma_WSD(self, T, comp, x, y, rho_l, rho_v, phi=1.0, correction=True):
         """
         Compute Interfacial tension of a mixture using the Winterfeld-Scriven-Davis method.
         DOI:10.1002/aic.690240610
@@ -268,7 +293,7 @@ class InterfacialTension:
         active = [T <= Tc_i for Tc_i in Tc_list]
         
         if not any(active):
-            return 0.0  # nothing contributes above all critical temps
+            return 0.0, 1.0  # nothing contributes above all critical temps
     
         # --- Step 1: Pure-component data at T (saturated liquid/vapor) ---
         
@@ -304,6 +329,7 @@ class InterfacialTension:
                     
         # --- Step 2: Mixture coefficients a_i (from mixture and pure n's) ---
         # a_i = (x_i*rho_l - y_i*rho_v) / (n^0_{i,l} - n^0_{i,v})
+        
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         a = (x * rho_l - y * rho_v) / n0  # shape (N,)
@@ -329,21 +355,21 @@ class InterfacialTension:
         # --- Step 4: Quadratic form ---
         gamma_mix_WSD = float(a @ G @ a)  # [mN/m]
         
+        # ---- Step 5: Supercritical correction (Roar correction) ----
         
-        # ---- Step 4: Supercritical correction (Roar correction) ----
-        if not all(active):
-            # sum of liquid mole fractions of inactive species
+        mixcorr = 1.0
+        if correction and not all(active): 
             x_inactive_sum = float(np.sum(x[[i for i in range(N) if not active[i]]]))
             mixcorr = max(0.0, 1.0 - x_inactive_sum)   # guard against tiny negatives
             gamma_mix_WSD *= mixcorr
         
         return gamma_mix_WSD, mixcorr
         
-    def gamma_TP(self, mixture: str, z: list[float], T: float,pressures_bar,
-                        kij: float = 0.0, phi_ij=1.0):
+    def gamma_PT(self, mixture: str, z: list[float], T: float, pressures_bar: float | list[float],
+                        kij: float = 0.0, phi_ij=1.0, correction=True):
         """
-        Compute the interfacial tension (IFT) of a binary mixture along its
-        phase envelope (TP diagram) at fixed temperature.
+        Compute the interfacial tension (IFT) of a mixture along its
+        phase envelope (PT diagram) at fixed temperature.
         
         This method uses both the Parachor and Winterfeld-Scriven-Davis (WSD)
         models to evaluate IFT at a series of equilibrium state points
@@ -363,12 +389,21 @@ class InterfacialTension:
             Binary interaction parameter for parachor mixing rule (scalar)
         phi_ij : float
             Mixing parameter for WSD model (scalar)    
+        correction : bool
+            Whether to apply supercritical correction only to the WSD model (default: True). If True, WSD results will be multiplied by (1 - sum(x_inactive)),
 
         Returns
         -------
         pressures_bar           : list[float]
         results_gamma_Parachor  : list[float]
         results_gamma_WSD       : list[float]
+        results_mixcorr_WSD     : list[float]
+        results_xL              : list[np.ndarray]
+        results_yV              : list[np.ndarray]
+        results_rhoL_kg_m3      : list[float]
+        results_rhoV_kg_m3      : list[float]
+        results_MM_L            : list[float]
+        results_MM_V            : list[float]
         """
 
         # Allow single float or iterable
@@ -377,8 +412,17 @@ class InterfacialTension:
         else:
             pressures_bar = [pressures_bar]
         
-        components      = mixture.split(";")
+        components      = [c.strip() for c in mixture.split(";") if c.strip()]
         ncomp           = len(components)
+        z               = np.asarray(z, dtype=float)
+        
+        if len(z) != ncomp:
+            raise ValueError(
+                f"Composition length mismatch: mixture has {ncomp} components, but z has length {len(z)}.")
+
+        if abs(np.sum(z) - 1.0) > 1e-6:
+            raise ValueError(f"Overall mole fractions do not sum to 1 (sum={np.sum(z)})")
+        
         pressures_bar   = list(pressures_bar)
 
         # --- per-component molar masses & parachor numbers at Teff (from pure gamma)
@@ -386,8 +430,11 @@ class InterfacialTension:
         parachor_numbers    = []
 
         for comp in components:
-            # Molar mass (kg/kmol == g/mol numerically)
-            MM = self.RP.REFPROPdll(comp, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0]).Output[0]
+            
+            MM_res = self.RP.REFPROPdll(comp, "TQ", "M", self.SI_BASE, 0, 0, T, 0, [1.0])
+            if MM_res.ierr > 0:
+                raise RuntimeError(f"Failed molar mass query for {comp}: {MM_res.herr.strip()}")
+            MM = MM_res.Output[0]
             MOLAR_MASSES.append(MM)
 
             # Pure gamma (may switch to Teff=0.9Tc if T>Tc)
@@ -395,6 +442,11 @@ class InterfacialTension:
 
             liq = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 0, [1.0])
             vap = self.RP.REFPROPdll(comp, "TQ", "D;P", self.SI_BASE, 0, 0, Teff, 1, [1.0])
+            
+            if liq.ierr > 0:
+                raise RuntimeError(f"Failed liquid saturation query for {comp}: {liq.herr.strip()}")
+            if vap.ierr > 0:
+                raise RuntimeError(f"Failed vapor saturation query for {comp}: {vap.herr.strip()}")
 
             rhoL_kg_m3 = liq.Output[0]
             rhoV_kg_m3 = vap.Output[0]
@@ -409,6 +461,7 @@ class InterfacialTension:
 
         results_gamma_Parachor  = []
         results_gamma_WSD       = []
+        results_mixcorr_WSD     = []
         
         results_MM_L            = []
         results_MM_V            = []
@@ -419,13 +472,13 @@ class InterfacialTension:
         
         for Pbar in pressures_bar:
             
-            # # Debug prints 
-            # print(f"\nCalculating mixture gamma at T={T} K, P={Pbar} bar for {mixture}")
-
-            mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar/10.0, z)
+            mix = self.RP.REFPROPdll(mixture, "TP", "D;Dliq;Dvap", self.SI_BASE, 0, 1, T, Pbar / 10.0, z.tolist())
             
-            xL  = np.array(mix.x[:ncomp])
-            yV  = np.array(mix.y[:ncomp])
+            if mix.ierr > 0:
+                raise RuntimeError(f"TP flash failed at T={T}, P={Pbar} bar: {mix.herr.strip()}")
+            
+            xL  = np.array(mix.x[:ncomp], dtype=float)
+            yV  = np.array(mix.y[:ncomp], dtype=float)
 
             results_xL.append(xL)
             results_yV.append(yV)
@@ -447,20 +500,21 @@ class InterfacialTension:
             rhoL_mol_cm3 = (rhoL_kg_m3 / MM_L) * 1e-3
             rhoV_mol_cm3 = (rhoV_kg_m3 / MM_V) * 1e-3
 
-            gamma_mix_Parachor = self.compute_gamma_Parachor(
-                                x=xL.tolist(),y=yV.tolist(),
-                                rho_l=rhoL_mol_cm3,rho_v=rhoV_mol_cm3,
-                                parachor_numbers=parachor_numbers,kij=kij)
+            gamma_mix_Parachor      = self.compute_gamma_Parachor(
+                                        x=xL.tolist(),y=yV.tolist(),
+                                        rho_l=rhoL_mol_cm3,rho_v=rhoV_mol_cm3,
+                                        parachor_numbers=parachor_numbers,kij=kij)
             
-            gamma_mix_WSD = self.compute_gamma_WSD(
-                            T=T, comp = components,x=xL.tolist(),
-                            y=yV.tolist(),rho_l=rhoL_mol_cm3,
-                            rho_v=rhoV_mol_cm3,phi=phi_ij)
+            gamma_mix_WSD, mixcorr  = self.compute_gamma_WSD(
+                                        T=T, comp = components,x=xL.tolist(),
+                                        y=yV.tolist(),rho_l=rhoL_mol_cm3,
+                                        rho_v=rhoV_mol_cm3,phi=phi_ij, correction=correction)
             
             results_gamma_Parachor.append(gamma_mix_Parachor)
             results_gamma_WSD.append(gamma_mix_WSD)
+            results_mixcorr_WSD.append(mixcorr)
             
-        return pressures_bar, results_gamma_Parachor, results_gamma_WSD, \
+        return pressures_bar, results_gamma_Parachor, results_gamma_WSD,  results_mixcorr_WSD, \
             results_xL, results_yV, results_rhoL_kg_m3, results_rhoV_kg_m3, results_MM_L, results_MM_V
     
     def apply_mask_and_sort(self, P, arrays):
@@ -911,84 +965,609 @@ class InterfacialTension:
         
     def TP_DIAGRAM(self, mixture: str, z: list[float], T: float, verbose: bool = False):
         """
-        Compute the TP phase envelope point (at fixed T) for a binary mixture using REFPROP.
+            Compute the TP phase-envelope pressures (at fixed T) for a mixture using REFPROP.
 
-        Parameters
-        ----------
-        mixture : str
-            REFPROP mixture string, e.g. "CO2;Methane".
-            The order of components in this string defines the order in mole fraction array `z`.
-        z : list[float]
-            Overall composition (same order as `mixture` components). Must sum to unity.
-        T : float
-            Temperature [K].
-        verbose : bool, optional
-            If True, print debug information.
+            Parameters
+            ----------
+            mixture : str
+                REFPROP mixture string, e.g. "CO2;Methane" or "Methane;Ethane;Propane".
+                The order of components defines the order in mole fraction array `z`.
+            z : list[float]
+                Overall mole-fraction composition. Must sum to unity.
+            T : float
+                Temperature [K]. Must be less than the mixture critical temperature Tc.
+            verbose : bool, optional
+                If True, print debug information.
 
         Returns
         -------
         out : dict
+            Dictionary containing critical point data and phase envelope points:
             {
-            'bubble': {'x', 'y', 'P_bar'},
-            'dew'   : {'x', 'y', 'P_bar'}
+                'Tc': float,                    # Critical temperature [K]
+                'Pc': float,                    # Critical pressure [bar]
+                'bubble': {
+                    'x': list[float],           # Liquid mole fraction
+                    'y': list[float],           # Vapor mole fraction
+                    'P_bar': float              # Bubble point pressure [bar] or np.nan
+                },
+                'dew': {
+                    'x': list[float],           # Liquid mole fraction
+                    'y': list[float],           # Vapor mole fraction
+                    'P_bar': float              # Dew point pressure [bar] or np.nan
+                }
             }
-            - Bubble point (Q=0): liquid overall; returns vapor-in-equilibrium 'y'.
-            Here, x ≈ z, y = res_liq.y
-            - Dew point (Q=1): vapor overall; returns liquid-in-equilibrium 'x'.
-            Here, y ≈ z, x = res_vap.x
 
         Notes
         -----
-        - Uses REFPROP's TQ flash at Q=0 and Q=1.
-        - Pressure unit conversion to bar follows your existing convention (*10).
+        - Uses REFPROP's TQ flash at Q=0 (bubble: saturated liquid) and Q=1 (dew: saturated vapor).
+        - Uses SATSPLN + TC;PC to obtain the mixture critical point.
+        - Negative ierr values from REFPROP are warnings, not fatal errors.
+        - Near the critical point, TQ flashes may fail to converge; in that case NaN values are returned.
+        - Pressure conversion is taken here as MPa -> bar using factor 10
+
+        Raises
+        ------
+        ValueError
+            If T >= mixture critical temperature or if overall composition does not sum to unity.
+        RuntimeError
+            If REFPROP fails to return the mixture critical point.
         """
-        comps = mixture.split(';')
-        if len(comps) != 2:
-            raise ValueError("TP_DIAGRAM supports binary mixtures only, e.g. 'CO2;Methane'.")
+        comps = [c.strip() for c in mixture.split(';') if c.strip()]
+        ncomp = len(comps)
+
+        if len(z) != ncomp:
+            raise ValueError(
+                f"Composition length mismatch: mixture has {ncomp} components, but z has length {len(z)}."
+            )
 
         if abs(sum(z) - 1.0) > 1e-6:
             raise ValueError(f"Overall mole fractions do not sum to 1 (sum={sum(z)})")
 
         z = np.asarray(z, dtype=float)
 
-        # --- Critical T check ---
+        # Enable GERG
+        self.RP.FLAGSdll('GERG', 1)
+
+        # --- Mixture critical point ---
         try:
-            Tc = self.RP.REFPROPdll(mixture, "C", "TCRIT", self.SI_BASE, 0, 0, 0, 0, z.tolist()).Output[0]
+            sat = self.RP.REFPROPdll(mixture, "SATSPLN", " ", self.SI_BASE, 0, 0, 0, 0, z.tolist())
+
+            if sat.ierr > 0:
+                raise RuntimeError(
+                    f"SATSPLN failed: ierr={sat.ierr}, herr='{sat.herr.strip()}'")
+            elif sat.ierr < 0 and verbose:
+                print(f"SATSPLN warning: ierr={sat.ierr}, herr='{sat.herr.strip()}'")
+
+            crit = self.RP.REFPROPdll(mixture, "", "TC;PC", self.SI_BASE, 0, 0, 0, 0, z.tolist())
+
+            if crit.ierr > 0:
+                raise RuntimeError(
+                    f"Critical-point query failed: ierr={crit.ierr}, herr='{crit.herr.strip()}'")
+            elif crit.ierr < 0 and verbose:
+                print(f"Critical-point warning: ierr={crit.ierr}, herr='{crit.herr.strip()}'")
+
+            Tc = crit.Output[0]         # K
+            Pc = crit.Output[1] * 10.0  # MPa -> bar
+
         except Exception as e:
-            raise RuntimeError(f"Failed to get Tc for {mixture} from REFPROP.") from e
+            raise RuntimeError(f"Failed to get mixture critical point for {mixture}.") from e
 
         if T >= Tc:
             raise ValueError(f"TP_DIAGRAM requires T < Tc (here T={T} K >= Tc={Tc} K).")
 
-        self.RP.FLAGSdll('GERG', 1)
-        
-        # --- Saturation states at given T ---
-        # Q = 0 -> saturated liquid (bubble point)
-        res_liq = self.RP.REFPROPdll(mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 0.0, z)
-        # Q = 1 -> saturated vapor (dew point)
-        res_vap = self.RP.REFPROPdll(mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 1.0, z)
+        # --- Default outputs as NaN ---
+        bubble = {
+            'x': [np.nan] * ncomp,
+            'y': [np.nan] * ncomp,
+            'P_bar': np.nan
+        }
 
-        # Pressures (keep your conversion factor)
-        P_bubble_bar = res_liq.Output[1] * 10.0  # bubble: Q=0
-        P_dew_bar    = res_vap.Output[1] * 10.0  # dew:    Q=1
+        dew = {
+            'x': [np.nan] * ncomp,
+            'y': [np.nan] * ncomp,
+            'P_bar': np.nan
+        }
 
-        # Equilibrium compositions
-        # At bubble: overall is liquid -> x ≈ z, y from res_liq.y
-        x_bubble = z.tolist()
-        y_bubble = list(res_liq.y)  # vapor in eq. with sat. liquid
+        # --- Bubble point: Q = 0 ---
+        try:
+            res_liq = self.RP.REFPROPdll(
+                mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 0.0, z.tolist())
 
-        # At dew: overall is vapor -> y ≈ z, x from res_vap.x
-        x_dew = list(res_vap.x)     # liquid in eq. with sat. vapor
-        y_dew = z.tolist()
+            if res_liq.ierr > 0:
+                raise RuntimeError(
+                    f"Bubble-point calculation failed: ierr={res_liq.ierr}, herr='{res_liq.herr.strip()}'")
+            elif res_liq.ierr < 0 and verbose:
+                print(f"Bubble-point warning: ierr={res_liq.ierr}, herr='{res_liq.herr.strip()}'")
+
+            bubble = {
+                'x': z.tolist(),
+                'y': list(res_liq.y[:ncomp]),
+                'P_bar': res_liq.Output[1] * 10.0
+            }
+
+        except Exception as e:
+            if verbose:
+                print(f"Bubble-point skipped at T={T:.6f} K: {e}")
+
+        # --- Dew point: Q = 1 ---
+        try:
+            res_vap = self.RP.REFPROPdll(
+                mixture, "TQ", "D;P;STN", self.SI_BASE, 0, 0, T, 1.0, z.tolist()
+            )
+
+            if res_vap.ierr > 0:
+                raise RuntimeError(
+                    f"Dew-point calculation failed: ierr={res_vap.ierr}, herr='{res_vap.herr.strip()}'"
+                )
+            elif res_vap.ierr < 0 and verbose:
+                print(f"Dew-point warning: ierr={res_vap.ierr}, herr='{res_vap.herr.strip()}'")
+
+            dew = {
+                'x': list(res_vap.x[:ncomp]),
+                'y': z.tolist(),
+                'P_bar': res_vap.Output[1] * 10.0
+            }
+
+        except Exception as e:
+            if verbose:
+                print(f"Dew-point skipped at T={T:.6f} K: {e}")
 
         if verbose:
-            print(f"T = {T} K")
-            print(f"Critical Temperature (Tc): {Tc:.4f} K")
-            print(f"Bubble: P = {P_bubble_bar:.6g} bar, x = {x_bubble}, y = {y_bubble}")
-            print(f"Dew   : P = {P_dew_bar:.6g} bar, x = {x_dew}, y = {y_dew}")
+            print(f"T = {T:.6f} K")
+            print(f"Critical Temperature (Tc): {Tc:.6f} K")
+            print(f"Critical Pressure    (Pc): {Pc:.6f} bar")
+            print(f"Bubble: P = {bubble['P_bar']}, x = {bubble['x']}, y = {bubble['y']}")
+            print(f"Dew   : P = {dew['P_bar']}, x = {dew['x']}, y = {dew['y']}")
 
         return {
             'Tc': Tc,
-            'bubble': {'x': x_bubble, 'y': y_bubble, 'P_bar': P_bubble_bar},
-            'dew'   : {'x': x_dew,    'y': y_dew,    'P_bar': P_dew_bar}
+            'Pc': Pc,
+            'bubble': bubble,
+            'dew': dew
         }
+
+    def PT_envelope_curves(self, csv_path: str, n_smooth: int = 400):
+        """
+        Read a PT-envelope CSV file, clean the data, append the critical point,
+        and return smoothed bubble/dew curves using PCHIP interpolation.
+
+        Parameters
+        ----------
+        csv_path : str
+            Path to the CSV file.
+        n_smooth : int, optional
+            Number of points for the smoothed curves.
+
+        Returns
+        -------
+        out : dict
+            {
+                "mixture": str,
+                "z_label": str,
+                "Tc": float,
+                "Pc": float,
+                "T_bub_raw": np.ndarray,
+                "P_bub_raw": np.ndarray,
+                "T_dew_raw": np.ndarray,
+                "P_dew_raw": np.ndarray,
+                "T_bub_smooth": np.ndarray,
+                "P_bub_smooth": np.ndarray,
+                "T_dew_smooth": np.ndarray,
+                "P_dew_smooth": np.ndarray,
+            }
+        """
+        df = pd.read_csv(csv_path)
+
+        if df.empty:
+            raise ValueError("CSV file is empty.")
+
+        required_cols = {"mixture", "point_type", "T_K", "Tc_K", "Pc_bar", "P_bub_bar", "P_dew_bar"}
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise ValueError(f"CSV file is missing required columns: {sorted(missing)}")
+
+        # --- metadata ---
+        mixture = str(df["mixture"].iloc[0])
+        Tc = float(df["Tc_K"].iloc[0])
+        Pc = float(df["Pc_bar"].iloc[0])
+
+        z_cols = [c for c in df.columns if c.startswith("z_")]
+        if z_cols:
+            comp_names = [c[2:] for c in z_cols]
+            z_vals = [float(df[c].iloc[0]) for c in z_cols]
+            z_label = ", ".join(f"{name}={val:.4f}" for name, val in zip(comp_names, z_vals))
+        else:
+            z_label = "composition unavailable"
+
+        # --- clean bubble branch ---
+        df_bub_clean = (
+            df[df["point_type"] == "bubble"]
+            .copy()
+            .loc[lambda d: d["P_bub_bar"] > 0]
+            .drop_duplicates(subset=["T_K"])
+            .sort_values("T_K")
+            .reset_index(drop=True)
+        )
+
+        # --- clean dew branch ---
+        df_dew_clean = (
+            df[df["point_type"] == "dew"]
+            .copy()
+            .loc[lambda d: d["P_dew_bar"] > 0]
+            .drop_duplicates(subset=["T_K"])
+            .sort_values("T_K")
+            .reset_index(drop=True)
+        )
+
+        if df_bub_clean.empty:
+            raise ValueError("No valid bubble-point data found.")
+        if df_dew_clean.empty:
+            raise ValueError("No valid dew-point data found.")
+
+        # --- append critical point ---
+        T_bub_raw = np.append(df_bub_clean["T_K"].to_numpy(dtype=float), Tc)
+        P_bub_raw = np.append(df_bub_clean["P_bub_bar"].to_numpy(dtype=float), Pc)
+
+        T_dew_raw = np.append(df_dew_clean["T_K"].to_numpy(dtype=float), Tc)
+        P_dew_raw = np.append(df_dew_clean["P_dew_bar"].to_numpy(dtype=float), Pc)
+
+        # --- sort ---
+        bubble_pts = np.column_stack([T_bub_raw, P_bub_raw])
+        bubble_pts = bubble_pts[np.argsort(bubble_pts[:, 0])]
+
+        dew_pts = np.column_stack([T_dew_raw, P_dew_raw])
+        dew_pts = dew_pts[np.argsort(dew_pts[:, 0])]
+
+        T_bub_raw, P_bub_raw = bubble_pts[:, 0], bubble_pts[:, 1]
+        T_dew_raw, P_dew_raw = dew_pts[:, 0], dew_pts[:, 1]
+
+        # --- shape-preserving interpolation ---
+        T_bub_smooth = np.linspace(T_bub_raw.min(), T_bub_raw.max(), n_smooth)
+        T_dew_smooth = np.linspace(T_dew_raw.min(), T_dew_raw.max(), n_smooth)
+
+        P_bub_smooth = PchipInterpolator(T_bub_raw, P_bub_raw)(T_bub_smooth)
+        P_dew_smooth = PchipInterpolator(T_dew_raw, P_dew_raw)(T_dew_smooth)
+
+        return {
+            "mixture": mixture,
+            "z_label": z_label,
+            "Tc": Tc,
+            "Pc": Pc,
+            "T_bub_raw": T_bub_raw,
+            "P_bub_raw": P_bub_raw,
+            "T_dew_raw": T_dew_raw,
+            "P_dew_raw": P_dew_raw,
+            "T_bub_smooth": T_bub_smooth,
+            "P_bub_smooth": P_bub_smooth,
+            "T_dew_smooth": T_dew_smooth,
+            "P_dew_smooth": P_dew_smooth,
+        }
+        
+    def compute_IFT_envelope(self, mixture: str, z: list[float], T_start: float = 200,
+                          N_points: int = 20, kij: float = 0.0, phi_ij=1.0,
+                          tol_frac: float = 5e-6, mode: str = "envelope",
+                          verbose: bool = False):
+        
+        """
+        Sweep temperature from T_start up to the mixture critical point and compute
+        interfacial tension (Parachor + WSD) at each temperature.
+
+        Parameters
+        ----------
+        mixture   : str         REFPROP mixture string, e.g. "CO2;Methane"
+        z         : list[float] Overall mole fractions (must sum to 1)
+        T_start   : float       Starting temperature [K] (default: 200)
+        N_points  : int         Number of pressure points between P_bub and P_dew.
+                                Only used when mode="envelope" (default: 20)
+        kij       : float       Binary interaction parameter for Parachor (default: 0.0)
+        phi_ij    : float       WSD cross-parameter (default: 1.0)
+        tol_frac  : float       Fractional inset from saturation pressures (default: 5e-6)
+        mode      : str         Pressure sampling strategy:
+                                "saturation" — evaluate only at bubble and dew points (2 points per T)
+                                "envelope"   — sweep N_points pressures inside the two-phase region
+
+        Returns
+        -------
+        df     : pd.DataFrame   Full results (all temperatures and pressures)
+        df_bub : pd.DataFrame   Subset closest to bubble point (first pressure at each T)
+        df_dew : pd.DataFrame   Subset closest to dew point (last pressure at each T)
+        """
+
+        if mode not in ("saturation", "envelope"):
+            raise ValueError(f"mode must be 'saturation' or 'envelope', got '{mode}'.")
+
+        comps = [c.strip() for c in mixture.split(';') if c.strip()]
+        ncomp = len(comps)
+
+        if len(z) != ncomp:
+            raise ValueError(
+                f"Composition length mismatch: mixture has {ncomp} components "
+                f"but z has {len(z)} entries."
+            )
+        if abs(sum(z) - 1.0) > 1e-6:
+            raise ValueError(f"Overall mole fractions do not sum to 1 (sum={sum(z):.6f})")
+
+        # Critical point
+        crit_result = self.TP_DIAGRAM(mixture, z, float(T_start), verbose=verbose)
+        Tc = crit_result['Tc']
+        Pc = crit_result['Pc']
+        print(f"Mixture critical point:  Tc = {Tc:.4f} K  |  Pc = {Pc:.4f} bar")
+        print(f"Mode: '{mode}'" + (f" | N_points = {N_points}" if mode == "envelope" else " | 2 points per T (bubble + dew)"))
+
+        T_list = np.arange(T_start, int(np.floor(Tc)), 1).tolist()
+        rows   = []
+
+        # Temperature sweep 
+        for T in T_list:
+
+            result = self.TP_DIAGRAM(mixture, z, T, verbose=verbose)
+            P_bub  = result['bubble']['P_bar']
+            P_dew  = result['dew']['P_bar']
+            Tc_loc = result['Tc']
+            Pc_loc = result['Pc']
+
+            if np.isnan(P_bub) or np.isnan(P_dew):
+                print(f"  [skip] T = {T:.1f} K — saturation branch unavailable.")
+                continue
+
+            # Pressure grid: choose based on mode 
+            if mode == "saturation":
+                # Only the two saturation boundaries
+                PRESSURES = np.array([
+                    P_bub * (1.0 - tol_frac),
+                    P_dew * (1.0 + tol_frac),
+                ])
+            else:  # mode == "envelope"
+                # Full sweep across the two-phase interior
+                PRESSURES = np.linspace(
+                    P_bub * (1.0 - tol_frac),
+                    P_dew * (1.0 + tol_frac),
+                    N_points
+                )
+
+            try:
+                Pbar, gamma_Parachor, gamma_WSD, mixcorr_WSD, \
+                    x, y, rhol, rhov, mml, mmv = \
+                    self.gamma_PT(mixture, z, T, PRESSURES, kij, phi_ij, correction=True)
+            except Exception as exc:
+                print(f"  [skip] T = {T:.1f} K — gamma_PT failed: {exc}")
+                continue
+
+            for P, s1, s2, s3, xl, yv, ml, mv, rhol_i, rhog_i in zip(
+                Pbar, gamma_Parachor, gamma_WSD, mixcorr_WSD,
+                x, y, mml, mmv, rhol, rhov
+            ):
+                # point_type is meaningful for both modes
+                point_type = "bubble" if abs(P - P_bub) <= abs(P - P_dew) else "dew"
+
+                row = {
+                    "mixture"             : mixture,
+                    "T_K"                 : round(float(T),       4),
+                    "Tc_K"                : round(float(Tc_loc),  6),
+                    "Pc_bar"              : round(float(Pc_loc),  6),
+                    "kij"                 : kij,
+                    "phi_ij"              : phi_ij,
+                    "mode"                : mode,
+                    "point_type"          : point_type,
+                    "P_bar"               : round(float(P),       6),
+                    "P_bub_bar"           : round(float(P_bub),   6),
+                    "P_dew_bar"           : round(float(P_dew),   6),
+                    "gamma_Parachor_mN_m" : round(float(s1),      8),
+                    "gamma_WSD_mN_m"      : round(float(s2),      8),
+                    "mixcorr_WSD"         : round(float(s3),      8),
+                    "M_liq_g_per_mol"     : round(float(ml),      8),
+                    "M_vap_g_per_mol"     : round(float(mv),      8),
+                    "rho_liq_kg_per_m3"   : round(float(rhol_i),  6),
+                    "rho_vap_kg_per_m3"   : round(float(rhog_i),  6),
+                }
+
+                for comp, zi in zip(comps, z):
+                    row[f"z_{comp}"] = round(float(zi), 6)
+                for comp, xi in zip(comps, xl):
+                    row[f"x_{comp}"] = round(float(xi), 6)
+                for comp, yi in zip(comps, yv):
+                    row[f"y_{comp}"] = round(float(yi), 6)
+
+                rows.append(row)
+
+            if verbose:
+                print(f"\n--- T = {T:.1f} K | Tc = {Tc_loc:.4f} K | Pc = {Pc_loc:.4f} bar ---")
+                print(f"  P_bub = {P_bub:.6f} bar  |  P_dew = {P_dew:.6f} bar")
+                print(f"  gamma_Parachor : {[round(float(v), 6) for v in gamma_Parachor]}")
+                print(f"  gamma_WSD      : {[round(float(v), 6) for v in gamma_WSD]}")
+                print(f"  mixcorr_WSD    : {[round(float(v), 6) for v in mixcorr_WSD]}")
+
+        df = pd.DataFrame(rows)
+
+        if df.empty:
+            print("Warning: no valid rows collected.")
+            empty = pd.DataFrame()
+            return empty, empty, empty
+
+        df_bub = df[df["point_type"] == "bubble"].reset_index(drop=True)
+        df_dew = df[df["point_type"] == "dew"].reset_index(drop=True)
+
+        print(f"\nDone — {len(df)} rows total  |  {len(df_bub)} bubble  |  {len(df_dew)} dew.")
+
+        return df, df_bub, df_dew
+    
+    def plot_IFT_colormap(self, csv_path: str, model_key: str = "Parachor",
+                        gamma_min_threshold: float = 1e-4, grid_size: int = 150,
+                        save_path: str = None):
+        """
+        Create a single colormap plot of interfacial tension in PT space from a CSV file.
+        Call once per model_key to get separate figures.
+
+        Parameters
+        ----------
+        csv_path              : str    Path to the IFT results CSV file
+        model_key             : str    "Parachor", "WSD", or "mixcorr" (default: "Parachor")
+        gamma_min_threshold   : float  Filter out IFT values below this threshold (default: 1e-4)
+        grid_size             : int    Resolution of the interpolation grid (default: 150)
+        save_path             : str    Base filename (without extension) to save PNG + PDF.
+                                    If None, figure is shown but not saved.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+        ax  : matplotlib.axes.Axes
+        """
+        import matplotlib.pyplot       as plt 
+        import thermoift.PLOT_SETTINGS as ps
+        from scipy.interpolate         import griddata
+        from matplotlib.path           import Path as MplPath
+        from scipy.ndimage             import binary_erosion
+
+        # --- Validate model_key ---
+        valid_keys = ("Parachor", "WSD", "mixcorr")
+        if model_key not in valid_keys:
+            raise ValueError(f"model_key must be one of {valid_keys}, got '{model_key}'.")
+
+        # --- Load CSV ---
+        df = pd.read_csv(csv_path)
+
+        required = {"T_K", "P_bar", "Tc_K", "Pc_bar",
+                    "gamma_Parachor_mN_m", "gamma_WSD_mN_m",
+                    "mixcorr_WSD", "P_bub_bar", "P_dew_bar"}
+        missing  = required - set(df.columns)
+        if missing:
+            raise ValueError(f"CSV is missing required columns: {sorted(missing)}")
+
+        # --- Map model_key to column, colormap, colorbar label, format ---
+        model_config = {
+            "Parachor" : ("gamma_Parachor_mN_m", plt.cm.Blues,  r'$\gamma \; / \; [\mathrm{mN \, m^{-1}}]$', '%.0f'),
+            "WSD"      : ("gamma_WSD_mN_m",      plt.cm.Blues,   r'$\gamma \; / \; [\mathrm{mN \, m^{-1}}]$', '%.0f'),
+            "mixcorr"  : ("mixcorr_WSD",         plt.cm.Greys, r'$f_{\mathrm{corr}}$ / [-]',                 '%.2f'),
+        }
+        gamma_col, cmap, cbar_label, fmt = model_config[model_key]
+
+        # --- Extract phase envelope directly from CSV (already computed) ---
+        Tc     = float(df["Tc_K"].iloc[0])
+        Pc     = float(df["Pc_bar"].iloc[0])
+        env_df = (
+            df[["T_K", "P_bub_bar", "P_dew_bar"]]
+            .drop_duplicates(subset=["T_K"])
+            .sort_values("T_K")
+            .reset_index(drop=True)
+        )
+        T_bubble = env_df["T_K"].tolist()       + [Tc]
+        P_bubble = env_df["P_bub_bar"].tolist() + [Pc]
+        T_dew    = env_df["T_K"].tolist()       + [Tc]
+        P_dew    = env_df["P_dew_bar"].tolist() + [Pc]
+
+        envelope_path = MplPath(
+            np.column_stack([T_bubble + T_dew[::-1],
+                            P_bubble + P_dew[::-1]])
+        )
+
+        # --- Metadata ---
+        mixture       = str(df["mixture"].iloc[0])
+        comps         = [c.strip() for c in mixture.split(";")]
+        z_cols        = [f"z_{c}" for c in comps]
+        z_vals        = [float(df[zc].iloc[0]) for zc in z_cols if zc in df.columns]
+        title_mixture = ps.format_mixture_latex(mixture)
+        title_z       = ps.format_z_latex(mixture, z_vals)
+
+        # --- Filter valid data ---
+        threshold = gamma_min_threshold if model_key != "mixcorr" else -np.inf
+        df_v      = df[df[gamma_col] >= threshold].copy()
+        T_g       = df_v["T_K"].values
+        P_g       = df_v["P_bar"].values
+        g_data    = df_v[gamma_col].values
+
+        if len(g_data) < 4:
+            raise RuntimeError(
+                f"Insufficient valid points ({len(g_data)}) for '{gamma_col}'. "
+                f"Check gamma_min_threshold or CSV content."
+            )
+
+        # --- Grid + cubic interpolation ---
+        T_grid         = np.linspace(T_g.min(), T_g.max(), grid_size)
+        P_grid         = np.linspace(P_g.min(), P_g.max(), grid_size)
+        T_mesh, P_mesh = np.meshgrid(T_grid, P_grid)
+
+        g_mesh = griddata(
+            (T_g, P_g), g_data,
+            (T_mesh, P_mesh),
+            method='cubic', fill_value=np.nan
+        )
+
+        # --- Mask outside the phase envelope ---
+        inside   = envelope_path.contains_points(
+            np.column_stack([T_mesh.ravel(), P_mesh.ravel()])
+        ).reshape(T_mesh.shape)
+
+        g_masked = np.ma.masked_where(~inside, g_mesh)
+        g_eroded = np.ma.masked_where(~binary_erosion(inside, iterations=2), g_mesh)
+
+        gmin = float(np.nanmin(g_masked))
+        gmax = float(np.nanmax(g_masked))
+
+        # --- Isoline levels ---
+        levels_fill  = np.linspace(gmin, gmax, 35)
+        if model_key == "mixcorr":
+            levels_lines = [v for v in np.arange(0, 1.05, 0.1)   if gmin <= v <= gmax]
+        else:
+            levels_lines = [v for v in np.arange(0, gmax + 1, 2) if gmin <= v <= gmax]
+
+        # --- Figure ---
+        fig, ax = ps.plot_init()
+
+        # filled contour
+        contour = ax.contourf(
+            T_mesh, P_mesh, g_masked,
+            levels=levels_fill, cmap=cmap, extend='both'
+        )
+
+        # contour lines (erode mask slightly to avoid edge artifacts)
+        if levels_lines:
+            contour_lines = ax.contour(
+                T_mesh, P_mesh, g_eroded,
+                levels=levels_lines, colors='black',
+                linewidths=ps.linewidth / 2, alpha=0.6
+            )
+            ax.clabel(
+                contour_lines, levels=levels_lines,
+                inline=True, fontsize=ps.label_fontsize / 2,
+                fmt=fmt, inline_spacing=15, rightside_up=True
+            )
+
+        # colorbar
+        cbar = fig.colorbar(contour, ax=ax, pad=0.02, format=fmt)
+        cbar.set_ticks(levels_lines)
+        cbar.set_label(cbar_label, fontsize=ps.label_fontsize)
+        ps.style_colorbar(cbar)
+
+        # phase envelope
+        ax.plot(T_bubble, P_bubble, color="b", linewidth=ps.linewidth, linestyle="-",
+                label="Bubble curve", zorder=10)
+        ax.plot(T_dew,    P_dew,    color="r", linewidth=ps.linewidth, linestyle="-",
+                label="Dew curve",    zorder=10)
+        ax.plot([T_dew[-2], Tc], [P_dew[-2], Pc],
+                linestyle="-", linewidth=ps.linewidth, color="red", zorder=10)
+
+        # critical point
+        label_cp = rf"($T_c={Tc:.1f}$ K, $P_c={Pc:.2f}$ bar)"
+        ax.plot(Tc, Pc, "o", markersize=ps.markersize, zorder=15,
+                markerfacecolor="grey", markeredgewidth=ps.markeredgewidth,
+                markeredgecolor="black",
+                label=rf"Critical point") # + " " + label_cp)
+
+        # labels and formatting
+        ax.set_xlabel(r'$T \; / \; [\mathrm{K}]$',  fontsize=ps.label_fontsize)
+        ax.set_ylabel(r'$P \; / \; [\mathrm{bar}]$', fontsize=ps.label_fontsize)
+        ax.set_title(f"{title_mixture} — {model_key}\n{title_z}",
+                    fontsize=ps.label_fontsize / 2)
+        ax.set_xlim(left=T_g.min() - 2)
+        ax.minorticks_on()
+        ps.style_legend(ax, fontsize=ps.legend_fontsize, loc='best', framealpha=0)
+
+        plt.tight_layout()
+
+        # --- Save ---
+        if save_path is not None:
+            ps.save_plot(fig, save_path)
+
+        plt.show()
+        return fig, ax
