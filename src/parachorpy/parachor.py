@@ -3,11 +3,16 @@
 # Created by Darshan on 2025-07-15
 # LAST UPDATED: 2025-03-09 by Darshan (Fixed some bugs and genralize the TP diagram to n components)
 
-import json,os,re,math,numpy as np,pandas as pd, collections.abc
-from ctREFPROP.ctREFPROP import REFPROPFunctionLibrary
-from pathlib import Path
-from scipy.interpolate import PchipInterpolator
+import json, os, re, math, numpy as np, pandas as pd, collections.abc, matplotlib.pyplot as plt
+import thermoift.PLOT_SETTINGS as ps
 
+from ctREFPROP.ctREFPROP    import REFPROPFunctionLibrary
+from pathlib                import Path
+from scipy.interpolate      import PchipInterpolator
+from scipy.interpolate      import griddata
+from matplotlib.path        import Path as MplPath
+from scipy.ndimage          import binary_erosion
+        
 class InterfacialTension:
     def __init__(self, json_files):
             """
@@ -1283,8 +1288,8 @@ class InterfacialTension:
         if len(z) != ncomp:
             raise ValueError(
                 f"Composition length mismatch: mixture has {ncomp} components "
-                f"but z has {len(z)} entries."
-            )
+                f"but z has {len(z)} entries.")
+            
         if abs(sum(z) - 1.0) > 1e-6:
             raise ValueError(f"Overall mole fractions do not sum to 1 (sum={sum(z):.6f})")
 
@@ -1311,20 +1316,15 @@ class InterfacialTension:
                 print(f"  [skip] T = {T:.1f} K — saturation branch unavailable.")
                 continue
 
-            # Pressure grid: choose based on mode 
             if mode == "saturation":
-                # Only the two saturation boundaries
                 PRESSURES = np.array([
                     P_bub * (1.0 - tol_frac),
-                    P_dew * (1.0 + tol_frac),
-                ])
+                    P_dew * (1.0 + tol_frac)])
             else:  # mode == "envelope"
-                # Full sweep across the two-phase interior
                 PRESSURES = np.linspace(
                     P_bub * (1.0 - tol_frac),
                     P_dew * (1.0 + tol_frac),
-                    N_points
-                )
+                    N_points)
 
             try:
                 Pbar, gamma_Parachor, gamma_WSD, mixcorr_WSD, \
@@ -1336,9 +1336,8 @@ class InterfacialTension:
 
             for P, s1, s2, s3, xl, yv, ml, mv, rhol_i, rhog_i in zip(
                 Pbar, gamma_Parachor, gamma_WSD, mixcorr_WSD,
-                x, y, mml, mmv, rhol, rhov
-            ):
-                # point_type is meaningful for both modes
+                x, y, mml, mmv, rhol, rhov):
+                
                 point_type = "bubble" if abs(P - P_bub) <= abs(P - P_dew) else "dew"
 
                 row = {
@@ -1413,11 +1412,6 @@ class InterfacialTension:
         fig : matplotlib.figure.Figure
         ax  : matplotlib.axes.Axes
         """
-        import matplotlib.pyplot       as plt 
-        import thermoift.PLOT_SETTINGS as ps
-        from scipy.interpolate         import griddata
-        from matplotlib.path           import Path as MplPath
-        from scipy.ndimage             import binary_erosion
 
         # --- Validate model_key ---
         valid_keys = ("Parachor", "WSD", "mixcorr")
@@ -1570,4 +1564,5 @@ class InterfacialTension:
             ps.save_plot(fig, save_path)
 
         plt.show()
+        
         return fig, ax
