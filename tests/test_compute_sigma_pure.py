@@ -4,5 +4,5 @@
 import json
 from pathlib import Path
 from pytest import approx
-from parachorpy import parachor
+from Interfacethermopy import parachor
 

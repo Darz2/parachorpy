@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Created by Darshan on 2025-10-03
 
-from parachorpy import parachor as IFT
+from Interfacethermopy import parachor as IFT
 import numpy as np, pandas as pd, csv
 import matplotlib.pyplot as plt
 

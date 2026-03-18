@@ -3,8 +3,8 @@ requires = ["setuptools>=69", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "parachorpy"
-version = "0.2.0"
+name = "Interfacethermopy"
+version = "0.3.0"
 description = "Interfacial tension computation of mixtures using parachor correlations and Winterfeld–Scriven–Davis (WSD) model"
 readme = "README.md"
 requires-python = ">=3.9"

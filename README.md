@@ -1,6 +1,6 @@
-# parachorpy
+# Interfacethermopy
 
-`parachorpy` is a Python package that calculates **Vapor-liquid interfcial tension (IFT) of pure fluids** using emperical correlations [1,2] and **Vapor-liquid IFT of mixtures** using Parachor model [3]. It supports loading JSON data sources containing fluid-specific coefficients which are required to calculate IFTs.
+`Interfacethermopy` is a Python package that calculates **Vapor-liquid interfcial tension (IFT) of pure fluids** using emperical correlations [1,2] and **Vapor-liquid IFT of mixtures** using Parachor model [3]. It supports loading JSON data sources containing fluid-specific coefficients which are required to calculate IFTs.
 
 ## Features
 
@@ -29,7 +29,7 @@
 - ![n](https://latex.codecogs.com/svg.latex?n) is the exponential constant of the Parachor model equal to 3.87 [4].
 - If ![T_{\mathrm{mix}}](https://latex.codecogs.com/svg.latex?T_{\mathrm{mix}}) > 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) of the component ![i](https://latex.codecogs.com/svg.latex?i) in the mixture then ![P_i](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}) is computed at 0.9*![T_c](https://latex.codecogs.com/svg.latex?T_{c}) for numerical stability. The same approach is also applied in REFPROP V10.
 - The Parachor model is used in addition with other Equation of State (EoS) models (Peng–Robinson, SRK, GERG-2008, EoS-CG, etc.) to compute ![rho^L_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^L_\mathrm{mix}), ![rho^V_\mathrm{mix}](https://latex.codecogs.com/svg.latex?\rho^V_\mathrm{mix}), ![P(T)_{i}](https://latex.codecogs.com/svg.latex?\mathcal{P}_{i}(T)), ![rho^L_i](https://latex.codecogs.com/svg.latex?\rho^L_i), ![rho^V](https://latex.codecogs.com/svg.latex?\rho^V_i), ![x](https://latex.codecogs.com/svg.latex?x), and ![y](https://latex.codecogs.com/svg.latex?y).
-- `parachorpy` can be used as a plugin with other thermodynamic packages like Clapeyron, FeOs and REFPROP to compute IFTs of pure fluids and mixtures.
+- `Interfacethermopy` can be used as a plugin with other thermodynamic packages like Clapeyron, FeOs and REFPROP to compute IFTs of pure fluids and mixtures.
 - Compute IFTs of mixtures using the Winterfeld–Scriven–Davis (WSD) model. For a general multicomponent system,
 
 <p align="center">
@@ -65,7 +65,7 @@
 </p>
 
 - Here ![J](https://latex.codecogs.com/svg.latex?J) is the nucleation rate, ![K](https://latex.codecogs.com/svg.latex?K) is the kinetic prefactor, ![gamma](https://latex.codecogs.com/svg.latex?\gamma) is the interfacial tension, ![r_c](https://latex.codecogs.com/svg.latex?r_c) is the critical nucleus radius, ![k_B](https://latex.codecogs.com/svg.latex?k_B) is the Boltzmann constant, and ![T](https://latex.codecogs.com/svg.latex?T) is the temperature.
-- Using the computed interfacial tension together with thermodynamic properties from an Equation of State, `parachorpy` can estimate metastable limits associated with nucleation phenomena.
+- Using the computed interfacial tension together with thermodynamic properties from an Equation of State, `Interfacethermopy` can estimate metastable limits associated with nucleation phenomena.
 
 ---
 
@@ -74,7 +74,7 @@
 Git clone the package and install the package,
 
 ```bash
-git clone https://github.com/Darz2/parachorpy.git
+git clone https://github.com/Darz2/Interfacethermopy.git
 pip install .
 ```
 
@@ -112,7 +112,7 @@ Each JSON file must contain a list of dictionaries, each describing one fluid. E
 ## Example Usage
 
 ```python
-from parachorpy import parachor as IFT
+from Interfacethermopy import parachor as IFT
 import numpy as np
 
 if __name__ == '__main__':
